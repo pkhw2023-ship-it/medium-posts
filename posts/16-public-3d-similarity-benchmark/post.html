@@ -175,68 +175,7 @@ feats = m(**p(images=batch, return_tensors=&quot;pt&quot;).to(device)).last_hidd
 
 <p class="caption-top">Table 1. Per-tier mAP on the test split. Bold marks the best score in each column. The bottom row is <code>n_queries</code>, identical across baselines so the gap is in the descriptor, not the test set.</p>
 
-<table>
-  <thead>
-    <tr>
-      <th>Baseline</th>
-      <th class="num">Tier 1</th>
-      <th class="num">Tier 2</th>
-      <th class="num">Tier 3</th>
-      <th class="num">Tier 4</th>
-      <th class="num">Tier 5</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>DINOv2-mv</td>
-      <td class="num"><strong>1.00</strong></td>
-      <td class="num">0.74</td>
-      <td class="num">0.48</td>
-      <td class="num">0.49</td>
-      <td class="num"><strong>0.22</strong></td>
-    </tr>
-    <tr>
-      <td>CLIP-mv</td>
-      <td class="num"><strong>1.00</strong></td>
-      <td class="num">0.61</td>
-      <td class="num">0.31</td>
-      <td class="num">0.35</td>
-      <td class="num">0.19</td>
-    </tr>
-    <tr>
-      <td>Zernike-3D</td>
-      <td class="num"><strong>1.00</strong></td>
-      <td class="num"><strong>0.92</strong></td>
-      <td class="num"><strong>0.72</strong></td>
-      <td class="num"><strong>0.66</strong></td>
-      <td class="num">0.10</td>
-    </tr>
-    <tr>
-      <td>Voxel-hash-32</td>
-      <td class="num"><strong>1.00</strong></td>
-      <td class="num"><strong>0.92</strong></td>
-      <td class="num">0.06</td>
-      <td class="num">0.06</td>
-      <td class="num">0.04</td>
-    </tr>
-    <tr>
-      <td>PointNet-proxy</td>
-      <td class="num">0.998\*</td>
-      <td class="num">0.10</td>
-      <td class="num">0.15</td>
-      <td class="num">0.13</td>
-      <td class="num">0.16</td>
-    </tr>
-    <tr>
-      <td>n_queries</td>
-      <td class="num">320</td>
-      <td class="num">320</td>
-      <td class="num">320</td>
-      <td class="num">320</td>
-      <td class="num">284</td>
-    </tr>
-  </tbody>
-</table>
+<figure><img src="tables/table1.png" alt="Data table 1" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 1</figcaption></figure>
 
 <p class="caption-src">Source: <code>data/baseline-results.csv</code> (25 rows). \* PointNet-proxy missed exactly one Tier 1 query out of 320 — almost certainly a PCA-axis-ambiguity flip on a near-symmetric mesh, which is the failure mode the sanity tier is designed to surface. The 19-D proxy collapses to mAP = 0.998 instead of 1.00; a learned PointNet would be expected to fix it.</p>
 
@@ -308,68 +247,7 @@ feats = m(**p(images=batch, return_tensors=&quot;pt&quot;).to(device)).last_hidd
 
 <h2>Reproducibility</h2>
 
-<table>
-  <thead>
-    <tr>
-      <th>Item</th>
-      <th>Value</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>Dataset</td>
-      <td>ModelNet40 (Wu et al., 2015) — 12,311 OFFs across 40 classes</td>
-    </tr>
-    <tr>
-      <td>Sources used</td>
-      <td>800 (20/class balanced sample, seed 42)</td>
-    </tr>
-    <tr>
-      <td>Split</td>
-      <td>80/10/10 by source ID, no leakage; SHA <code>aaa297c5...c668b7</code></td>
-    </tr>
-    <tr>
-      <td>Tiers</td>
-      <td>1: identity / 2: rotation / 3: rot+decim+noise / 4: rot+decim+hue / 5: cross-instance</td>
-    </tr>
-    <tr>
-      <td>Clones per source per tier</td>
-      <td>4</td>
-    </tr>
-    <tr>
-      <td>Renders</td>
-      <td>8 horizontal-ring views, elev 20°, 224×224</td>
-    </tr>
-    <tr>
-      <td>Encoders</td>
-      <td>DINOv2-ViT-B/14, CLIP-ViT-B/32, Zernike (n_max=6, grid=32), voxel-hash-32, PointNet-proxy (19D)</td>
-    </tr>
-    <tr>
-      <td>Metric</td>
-      <td>mAP = mean of 1/(rank+1) where the true target is the source mesh; recall@k also reported. With one relevant item per query, mAP collapses to MRR (mean reciprocal rank) — same math, different name in IR-land</td>
-    </tr>
-    <tr>
-      <td>Hard-neg miner</td>
-      <td>DINOv2-mv, top-50 same-class by cosine</td>
-    </tr>
-    <tr>
-      <td>Hardware</td>
-      <td><code>lightsail-shapenet</code> (Tesla T4, 16 GiB), conda env <code>3d-dedup</code></td>
-    </tr>
-    <tr>
-      <td>Wall clock</td>
-      <td>~40 minutes end-to-end (after a one-time cache of DINOv2 embeddings)</td>
-    </tr>
-    <tr>
-      <td>Data files</td>
-      <td><code>data/benchmark-manifest.csv</code>, <code>data/splits.csv</code>, <code>data/baseline-results.csv</code>, <code>data/tier-difficulty.csv</code>, <code>data/hard-negatives.csv</code>, <code>data/dataset-card.md</code>, <code>data/benchmark-summary.json</code></td>
-    </tr>
-    <tr>
-      <td>Code</td>
-      <td><code>code/main.py</code> end-to-end, <code>code/build_visuals.py</code> for all figures, <code>code/make-construction-diagram.py</code> for the pipeline figure</td>
-    </tr>
-  </tbody>
-</table>
+<figure><img src="tables/table2.png" alt="Data table 2" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 2</figcaption></figure>
 
 <p>Every number cited in the post traces to one of those CSVs. The build script runs end-to-end with <code>python code/main.py</code> on a fresh Tesla T4 in well under an hour. Re-running with the cached <code>.npy</code> files cuts the time roughly in half.</p>
 

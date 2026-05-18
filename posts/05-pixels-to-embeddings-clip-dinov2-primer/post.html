@@ -241,19 +241,7 @@ dino_views = dino(**inputs).last_hidden_state[:, 0, :]        # → (8, 768)
 <p class="caption-top">Table 1. Retrieval precision (within-class hit rate, excluding self) for six (encoder, pool) combinations on a 10-class, 200-object ModelNet40 subset. Index is FAISS IndexFlatIP over L2-normalised vectors. Best value in each column bolded.</p>
 
 <div class="table-wrap">
-<table>
-<thead>
-<tr><th>Encoder</th><th>Pool</th><th class="num">r@1</th><th class="num">r@5</th><th class="num">r@10</th><th class="num">Embed dim</th><th class="num">build (ms)</th><th class="num">query (ms)</th></tr>
-</thead>
-<tbody>
-<tr><td>CLIP ViT-B/32</td><td>mean</td><td class="num">0.775</td><td class="num">0.717</td><td class="num">0.632</td><td class="num">512</td><td class="num">0.045</td><td class="num">0.050</td></tr>
-<tr><td>CLIP ViT-B/32</td><td>max</td><td class="num">0.800</td><td class="num">0.710</td><td class="num">0.623</td><td class="num">512</td><td class="num">0.041</td><td class="num">0.050</td></tr>
-<tr><td>CLIP ViT-B/32</td><td>attn</td><td class="num">0.780</td><td class="num">0.715</td><td class="num">0.625</td><td class="num">512</td><td class="num">0.040</td><td class="num">0.050</td></tr>
-<tr><td>DINOv2 ViT-B/14</td><td>mean</td><td class="num">0.845</td><td class="num">0.763</td><td class="num">0.683</td><td class="num">768</td><td class="num">0.072</td><td class="num">0.071</td></tr>
-<tr><td>DINOv2 ViT-B/14</td><td>max</td><td class="num"><strong>0.865</strong></td><td class="num"><strong>0.789</strong></td><td class="num"><strong>0.703</strong></td><td class="num">768</td><td class="num">0.062</td><td class="num">0.072</td></tr>
-<tr><td>DINOv2 ViT-B/14</td><td>attn</td><td class="num">0.840</td><td class="num">0.764</td><td class="num">0.683</td><td class="num">768</td><td class="num">0.070</td><td class="num">0.071</td></tr>
-</tbody>
-</table>
+<figure><img src="tables/table1.png" alt="Data table 1" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 1</figcaption></figure>
 </div>
 <p class="caption-src">Source: data/retrieval-at-5.csv (6 rows).</p>
 
@@ -315,21 +303,7 @@ flowchart TD
 <p class="caption-top">Table 2. Encoder throughput on a Tesla T4, batch sizes 1 / 8 / 32 / 128, 224×224 input. CLIP ViT-B/32 runs ~5x faster than DINOv2 ViT-B/14 at every realistic batch size. Throughput is images per second, measured end-to-end including preprocessing.</p>
 
 <div class="table-wrap">
-<table>
-<thead>
-<tr><th>Encoder</th><th class="num">Batch size</th><th class="num">Throughput (img/s)</th><th class="num">Peak GPU mem (MB)</th></tr>
-</thead>
-<tbody>
-<tr><td>CLIP ViT-B/32</td><td class="num">1</td><td class="num">114</td><td class="num">1297</td></tr>
-<tr><td>CLIP ViT-B/32</td><td class="num">8</td><td class="num">311</td><td class="num">946</td></tr>
-<tr><td>CLIP ViT-B/32</td><td class="num">32</td><td class="num"><strong>401</strong></td><td class="num">1016</td></tr>
-<tr><td>CLIP ViT-B/32</td><td class="num">128</td><td class="num"><strong>1608</strong></td><td class="num">1104</td></tr>
-<tr><td>DINOv2 ViT-B/14</td><td class="num">1</td><td class="num">56</td><td class="num">929</td></tr>
-<tr><td>DINOv2 ViT-B/14</td><td class="num">8</td><td class="num">74</td><td class="num">1012</td></tr>
-<tr><td>DINOv2 ViT-B/14</td><td class="num">32</td><td class="num">79</td><td class="num">1297</td></tr>
-<tr><td>DINOv2 ViT-B/14</td><td class="num">128</td><td class="num">309</td><td class="num">1629</td></tr>
-</tbody>
-</table>
+<figure><img src="tables/table2.png" alt="Data table 2" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 2</figcaption></figure>
 </div>
 <p class="caption-src">Source: data/latency-by-batch.csv (8 rows).</p>
 
@@ -350,45 +324,13 @@ flowchart TD
 <p>Experiment configuration:</p>
 
 <div class="table-wrap">
-<table>
-<thead>
-<tr><th>Parameter</th><th>Value</th></tr>
-</thead>
-<tbody>
-<tr><td>ModelNet40 split / sampling</td><td>train split, first 20 alphabetically per class</td></tr>
-<tr><td>Classes (10)</td><td>airplane, chair, table, bed, bookshelf, bench, sofa, lamp, car, guitar</td></tr>
-<tr><td>Views per object</td><td>8 horizontal ring, azimuth 0°-315° in 45° steps, elevation 20°</td></tr>
-<tr><td>Render resolution</td><td>224×224, white bg, 3-point lighting</td></tr>
-<tr><td>CLIP model</td><td><code>openai/clip-vit-base-patch32</code> (512-D, MIT licence)</td></tr>
-<tr><td>DINOv2 model</td><td><code>facebook/dinov2-base</code> ViT-B/14 (768-D, CC BY-NC)</td></tr>
-<tr><td>Encoder batch size (retrieval run)</td><td>32</td></tr>
-<tr><td>Attention-pool temperature</td><td>0.1, query = per-object mean direction</td></tr>
-<tr><td>t-SNE</td><td>perplexity 30, <code>random_state=42</code>, init=<code>pca</code></td></tr>
-<tr><td>FAISS index</td><td><code>IndexFlatIP</code> over L2-normalised vectors</td></tr>
-<tr><td>Hardware</td><td>Tesla T4, CUDA 12.6, driver 560.35</td></tr>
-<tr><td>Framework versions</td><td>torch 2.11, transformers 5.6.1, faiss-cpu 1.14.1, sklearn 1.7.2, open3d (EGL headless)</td></tr>
-</tbody>
-</table>
+<figure><img src="tables/table3.png" alt="Data table 3" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 3</figcaption></figure>
 </div>
 
 <p>Reproducibility checklist (every numeric claim in prose):</p>
 
 <div class="table-wrap">
-<table>
-<thead>
-<tr><th>Claim in prose</th><th>Source file</th></tr>
-</thead>
-<tbody>
-<tr><td>0.789 retrieval@5 (DINOv2-max)</td><td><code>data/retrieval-at-5.csv</code> row 5</td></tr>
-<tr><td>0.763 retrieval@5 (DINOv2-mean)</td><td><code>data/retrieval-at-5.csv</code> row 4</td></tr>
-<tr><td>0.717 retrieval@5 (CLIP-mean)</td><td><code>data/retrieval-at-5.csv</code> row 1</td></tr>
-<tr><td>401 vs 79 images/sec at batch 32</td><td><code>data/latency-by-batch.csv</code> rows 3, 7</td></tr>
-<tr><td>0.81 vs 0.67 lamp (DINOv2 vs CLIP)</td><td><code>data/per-class-retrieval.csv</code> row <code>lamp</code></td></tr>
-<tr><td>200 objects, 10 classes, 8 views</td><td><code>data/render-manifest.csv</code> (200 rows)</td></tr>
-<tr><td>105 seconds for 1,600 renders</td><td><code>code/main.py</code> step 1 timer</td></tr>
-<tr><td>15.2 ms (224) vs 20.0 ms (1024) per view</td><td><code>data/render-resolution-cost.csv</code></td></tr>
-</tbody>
-</table>
+<figure><img src="tables/table4.png" alt="Data table 4" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 4</figcaption></figure>
 </div>
 
 <p>Run:</p>

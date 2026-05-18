@@ -159,40 +159,7 @@ print(psp.round(3))  # → [0.373 0.167 0.123 0.171 0.052 0.145 0.082 0.122 0.08
 
 <div style="overflow-x:auto">
 <p>Table 1. Retrieval mAP@5 on 500 ModelNet40 objects (10 classes, leave-one-out, cosine similarity). Power spectrum is rotation-invariant; raw coefficients are not.</p>
-<table>
-<thead>
-<tr>
-<th style="text-align: right;">L_max</th>
-<th style="text-align: right;">features</th>
-<th style="text-align: right;">mAP@5 (power)</th>
-<th style="text-align: right;">mAP@5 (raw)</th>
-<th style="text-align: center;">rotation-invariant</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td style="text-align: right;">4</td>
-<td style="text-align: right;">5 (power) / 25 (raw)</td>
-<td style="text-align: right;">0.555</td>
-<td style="text-align: right;">0.799</td>
-<td style="text-align: center;">yes / no</td>
-</tr>
-<tr>
-<td style="text-align: right;">6</td>
-<td style="text-align: right;">7 (power) / 49 (raw)</td>
-<td style="text-align: right;"><strong>0.591</strong></td>
-<td style="text-align: right;">0.811</td>
-<td style="text-align: center;">yes / no</td>
-</tr>
-<tr>
-<td style="text-align: right;">8</td>
-<td style="text-align: right;">9 (power) / 81 (raw)</td>
-<td style="text-align: right;">0.602</td>
-<td style="text-align: right;">0.811</td>
-<td style="text-align: center;">yes / no</td>
-</tr>
-</tbody>
-</table>
+<figure><img src="tables/table1.png" alt="Data table 1" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 1</figcaption></figure>
 <p>Source: data/order-ablation.csv (3 rows).</p>
 </div>
 <figure>
@@ -227,44 +194,7 @@ D, I = index.search(query_psp[None, :].astype(&quot;float32&quot;), k=5)
 <p>For the larger context: how does this stack up against the descriptors we have already looked at, and the ones we&rsquo;re about to?</p>
 <div style="overflow-x:auto">
 <p>Table 2. Where SH power spectrum sits in the cost-accuracy plane. CLIP and Zernike rows are from Post 06&rsquo;s bakeoff over 300 ModelNet40 objects (a different subset and split than this post&rsquo;s 500-object pool, so absolute numbers aren&rsquo;t directly comparable to Table 1 — what matters here is the rank).</p>
-<table>
-<thead>
-<tr>
-<th style="text-align: left;">descriptor</th>
-<th style="text-align: right;">dim</th>
-<th style="text-align: right;">build (ms/obj)</th>
-<th style="text-align: right;">mAP@5 at 0°</th>
-<th style="text-align: right;">mAP@5 at 90°</th>
-<th style="text-align: center;">rotation-invariant</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td style="text-align: left;">SH power spectrum (this post, L_max=6)</td>
-<td style="text-align: right;">7</td>
-<td style="text-align: right;">~25</td>
-<td style="text-align: right;"><strong>0.591</strong></td>
-<td style="text-align: right;"><strong>0.591</strong></td>
-<td style="text-align: center;">yes</td>
-</tr>
-<tr>
-<td style="text-align: left;">ZernikeApprox (Post 06 bakeoff, n_max=8)</td>
-<td style="text-align: right;">45</td>
-<td style="text-align: right;">~146</td>
-<td style="text-align: right;">0.689</td>
-<td style="text-align: right;">0.649</td>
-<td style="text-align: center;">yes</td>
-</tr>
-<tr>
-<td style="text-align: left;">Multi-view CLIP (Post 06, 8 views)</td>
-<td style="text-align: right;">512</td>
-<td style="text-align: right;">~741</td>
-<td style="text-align: right;">0.870</td>
-<td style="text-align: right;">0.583</td>
-<td style="text-align: center;">no (needs aug)</td>
-</tr>
-</tbody>
-</table>
+<figure><img src="tables/table2.png" alt="Data table 2" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 2</figcaption></figure>
 <p>Source: data/order-ablation.csv (this post); posts/06-rotation-invariant-descriptor-bakeoff/data/retrieval-at-rotation.csv + descriptor-meta.csv.</p>
 </div>
 <p>CLIP wins on absolute mAP at 0° rotation, and badly loses to both rotation-invariant descriptors once the input is rotated by 90°. It also costs ~30x the build time of SH-power-spectrum and ~70x the descriptor dimension. If you&rsquo;re indexing 10 million objects on a CPU and want to find the rough class of a query in tens of microseconds, the SH power spectrum is the right pick. If you have a GPU and the query latency budget for 8 renders + a transformer forward pass, and your inputs come in known orientations, you should pay it. Post 11 takes the second branch and builds a real search engine from multi-view DINOv2; Post 09 takes the first and pushes this same canonicalization-plus-compression idea down to a 64-bit hash for exact-duplicate detection.</p>
@@ -272,68 +202,7 @@ D, I = index.search(query_psp[None, :].astype(&quot;float32&quot;), k=5)
 <p>The SH power spectrum is the cheapest rotation-invariant shape descriptor that still preserves coarse class structure. It buys you that invariance with one line of math (the per-band L2 norm) and pays for it by collapsing concave geometry. When your data is small enough to render and embed, use multi-view CLIP. When your data is large enough that you can only afford O(7) numbers per object and a single ray-cast, this is the descriptor.</p>
 <p>Post 09 picks up the thread from a different angle: instead of taking per-band L2 norms to throw away the rotational component of the SH coefficients, what if we throw away even more and ship a 64-bit hash?</p>
 <h2>Reproducibility</h2>
-<table>
-<thead>
-<tr>
-<th>Claim</th>
-<th>Source</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>0.591 mAP@5 at <code>L_max=6</code>, power spectrum</td>
-<td>data/order-ablation.csv row <code>L_max=6</code></td>
-</tr>
-<tr>
-<td>0.555 / 0.602 at <code>L_max=4, 8</code></td>
-<td>data/order-ablation.csv</td>
-</tr>
-<tr>
-<td>0.811 at <code>L_max=6</code>, raw coefficients</td>
-<td>data/order-ablation.csv</td>
-</tr>
-<tr>
-<td>0.0014 mean power-spectrum cosine distance under rotation</td>
-<td>data/rotation-check.csv (n=200)</td>
-</tr>
-<tr>
-<td>0.022 max power-spectrum cosine distance under rotation</td>
-<td>data/rotation-check.csv</td>
-</tr>
-<tr>
-<td>0.41 mean raw-coefficient cosine distance under rotation</td>
-<td>data/rotation-check.csv</td>
-</tr>
-<tr>
-<td>0.48 / 0.996 raw / power cosine on the Figure-4 chair</td>
-<td>code/make-rotation-invariance-overlay.py output</td>
-</tr>
-<tr>
-<td>~25 ms SH projection per object</td>
-<td>run.log &ldquo;SH projection alone: median 25.51 ms&rdquo;</td>
-</tr>
-<tr>
-<td>Dataset: ModelNet40, 10 classes × 50 train OFFs, alphabetical</td>
-<td>code/main.py <code>CLASSES_10</code>, <code>collect_paths</code></td>
-</tr>
-<tr>
-<td>Hardware: <code>lightsail-shapenet</code> (Tesla T4, GPU unused on this CPU-bound run); 16-vCPU; 64 GiB; conda env <code>3d-dedup</code></td>
-<td>uname -a; lscpu</td>
-</tr>
-<tr>
-<td>Software: Python 3.10, scipy 1.15.3, trimesh 4.11.5, numpy 2.2.6</td>
-<td>conda env <code>3d-dedup</code></td>
-</tr>
-<tr>
-<td>Seed: 42 (icosphere, rotations, UMAP)</td>
-<td><code>SEED = 42</code> in code/main.py</td>
-</tr>
-<tr>
-<td>Build: <code>python code/main.py</code> (full) or <code>python code/main.py --quick</code></td>
-<td>code/main.py argparse</td>
-</tr>
-</tbody>
-</table>
+<figure><img src="tables/table3.png" alt="Data table 3" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 3</figcaption></figure>
 <p>Full code: <code>code/main.py</code> + one <code>make-&lt;figure&gt;.py</code> per figure. Every PNG in <code>images/</code> has a generator script with the same slug.</p>
 <h2>References</h2>
 <ul>

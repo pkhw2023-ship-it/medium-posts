@@ -181,52 +181,7 @@ hr { border: none; border-top: 1px solid var(--rule); margin: 2.5em 0; }
 
 <p class="caption-top">Table 1. Comparison of four interval methods at the 90% coverage target. Recommended row (conformal) in bold.</p>
 
-<table>
-  <thead>
-    <tr>
-      <th>Method</th>
-      <th>Coverage @ 90%</th>
-      <th>Median width</th>
-      <th>Worst-class coverage</th>
-      <th>Cost per object</th>
-      <th>Use when</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>augmentation</td>
-      <td>0.86</td>
-      <td>0.54</td>
-      <td>0.79</td>
-      <td>50 forwards</td>
-      <td>default; cheap, competitive</td>
-    </tr>
-    <tr>
-      <td>bootstrap</td>
-      <td>0.15</td>
-      <td>0.08</td>
-      <td>0.03</td>
-      <td>50 forwards + 200 means</td>
-      <td>you want a CI on the mean, not a prediction interval</td>
-    </tr>
-    <tr>
-      <td>ensemble (5×)</td>
-      <td>0.81</td>
-      <td>0.76</td>
-      <td>0.60</td>
-      <td>5 forwards (different models)</td>
-      <td>you have multiple trained models anyway</td>
-    </tr>
-    <tr>
-      <td><strong>conformal</strong></td>
-      <td><strong>0.90</strong></td>
-      <td><strong>0.58</strong></td>
-      <td><strong>0.65</strong></td>
-      <td>50 forwards + 1 mean + calibration set</td>
-      <td>you need a marginal-coverage guarantee</td>
-    </tr>
-  </tbody>
-</table>
+<figure><img src="tables/table1.png" alt="Data table 1" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 1</figcaption></figure>
 
 <p>Bold is the recommended row when you need a coverage guarantee. If you don't — if a few points of undercoverage is acceptable — augmentation is cheaper and you skip the calibration set entirely. The thing not to do is grade bootstrap-of-the-mean intervals against single new predictions: they answer a different question (where is the mean), and applying them to predictive coverage will look like a method failure when it's a category error.</p>
 

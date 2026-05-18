@@ -166,52 +166,7 @@ class EmbeddingCache:
 
 <p class="caption-top">Table 1. Cache strategy comparison on a 30-cycle simulation with 20% per-cycle churn. Recommended row in bold.</p>
 
-<table>
-  <thead>
-    <tr>
-      <th>Strategy</th>
-      <th>30-day GPU seconds</th>
-      <th>30-day GPU hours</th>
-      <th>Final hit rate</th>
-      <th>Lookup p50 (µs)</th>
-      <th>Correctness</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>no cache</td>
-      <td>127.84</td>
-      <td>0.0355</td>
-      <td>n/a</td>
-      <td>n/a</td>
-      <td>yes</td>
-    </tr>
-    <tr>
-      <td><strong>SHA256</strong></td>
-      <td><strong>29.27</strong></td>
-      <td><strong>0.0081</strong></td>
-      <td><strong>0.80</strong></td>
-      <td><strong>511</strong></td>
-      <td><strong>yes</strong></td>
-    </tr>
-    <tr>
-      <td>pHash (alone)</td>
-      <td>4.26</td>
-      <td>0.0012</td>
-      <td>1.00</td>
-      <td>(see SHA row)</td>
-      <td>NO — silent false hits</td>
-    </tr>
-    <tr>
-      <td>SHA + pHash prefilter</td>
-      <td>29.27</td>
-      <td>0.0081</td>
-      <td>≥ 0.80</td>
-      <td>(see SHA row)</td>
-      <td>yes (pHash is hint only)</td>
-    </tr>
-  </tbody>
-</table>
+<figure><img src="tables/table1.png" alt="Data table 1" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 1</figcaption></figure>
 
 <p class="caption-src">Source: <code>data/churn-simulation.csv</code>, <code>data/run-sha-cache.csv</code>.</p>
 
@@ -264,42 +219,7 @@ flowchart LR
 
 <p class="caption-top">Table 2. Cache invalidation cheatsheet: what triggers a re-embed, how the cache detects it, detection latency.</p>
 
-<table>
-  <thead>
-    <tr>
-      <th>Trigger</th>
-      <th>Detection mechanism</th>
-      <th>Re-embed behavior</th>
-      <th>Latency to detect</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>Model upgrade (S → B)</td>
-      <td>Key column <code>model_version</code> differs</td>
-      <td>All keys miss; full re-embed</td>
-      <td>O(1) per lookup</td>
-    </tr>
-    <tr>
-      <td>Preprocessing change (224 → 336)</td>
-      <td>Key column <code>preproc_version</code> differs</td>
-      <td>All keys miss; full re-embed</td>
-      <td>O(1) per lookup</td>
-    </tr>
-    <tr>
-      <td>Content edit (1 byte changed)</td>
-      <td>sha256 differs</td>
-      <td>Edited file misses; re-embeds</td>
-      <td>O(1) per lookup</td>
-    </tr>
-    <tr>
-      <td>Stored vector corruption</td>
-      <td><strong>NONE — schema does not checksum the vec column</strong></td>
-      <td>Returns corrupt vector silently</td>
-      <td>Requires explicit re-encode audit</td>
-    </tr>
-  </tbody>
-</table>
+<figure><img src="tables/table2.png" alt="Data table 2" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 2</figcaption></figure>
 
 <p class="caption-src">Source: <code>data/invalidation-audit.csv</code>. The last row is honest about a real gap; the schema cost to close it (a row-level CRC of the vec column) hasn't been worth it. Yet.</p>
 
@@ -313,36 +233,7 @@ flowchart LR
 
 <h2>Reproducibility</h2>
 
-<table>
-  <thead>
-    <tr>
-      <th>Claim in prose</th>
-      <th>File</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>Per-cycle wall and compute time for each strategy</td>
-      <td><code>data/churn-simulation.csv</code></td>
-    </tr>
-    <tr>
-      <td>Cold vs warm wall time, p50 lookup</td>
-      <td><code>data/run-no-cache.csv</code>, <code>data/run-sha-cache.csv</code></td>
-    </tr>
-    <tr>
-      <td>pHash false-positive rate and pairs</td>
-      <td><code>data/phash-false-positive-summary.csv</code>, <code>data/phash-false-positive-pairs.csv</code></td>
-    </tr>
-    <tr>
-      <td>Invalidation audit (4 scenarios)</td>
-      <td><code>data/invalidation-audit.csv</code></td>
-    </tr>
-    <tr>
-      <td>Throughput vs batch size, cold and warm</td>
-      <td><code>data/batch-throughput.csv</code></td>
-    </tr>
-  </tbody>
-</table>
+<figure><img src="tables/table3.png" alt="Data table 3" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 3</figcaption></figure>
 
 <p>Pinned versions: torch 2.11.0+cu126, numpy 2.2.6, transformers (DINOv2 facebook/dinov2-small, 384-dim), duckdb 1.5.2, imagehash 4.3.2 (8×8 DCT pHash), Open3D 0.19.0 and trimesh 4.11.5 (upstream rendering, inherited from Post 05). Hardware: Tesla T4, 15 GB. Conda env <code>3d-dedup</code> on <code>lightsail-shapenet</code>. DINOv2-small (384-dim) was chosen here in place of the wave's canonical DINOv2-base (768-dim) to keep the 30-cycle simulation under the 25-minute wall-clock budget. The cache behavior is independent of vector dimensionality — the GPU-time saved scales with the model, not the cache logic. Image corpus: 1,600 ModelNet40 view renders from Post 05 (10 classes × 20 alphabetically-first train OFFs × 8 horizontal-ring views = 1,600 images). The original spec called for 50K ABO product images; ABO bulk download is gated and slow for a one-post experiment, so I substituted public CC-licensed renders. The cache behavior is independent of the image source; the absolute timings would scale roughly linearly with corpus size at the same per-image cost.</p>
 

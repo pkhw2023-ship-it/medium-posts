@@ -107,23 +107,7 @@ flowchart LR
 <p class="caption-top">Table 1. Metric preservation by projection. Trustworthiness and continuity at k=10; pair-distance Spearman over 1000 random pairs; runtime on a single CPU. Best in each column in bold. Sammon highlighted as the recommended choice for any claim that depends on distance.</p>
 
 <div class="table-wrap">
-<table>
-  <thead>
-    <tr>
-      <th>Projection</th>
-      <th class="num">Trust @ k=10</th>
-      <th class="num">Continuity @ k=10</th>
-      <th class="num">Pair-distance Spearman</th>
-      <th class="num">Runtime (s)</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr><td>PCA</td><td class="num">0.857</td><td class="num">0.930</td><td class="num">0.762</td><td class="num"><strong>1.05</strong></td></tr>
-    <tr><td>t-SNE</td><td class="num"><strong>0.977</strong></td><td class="num">0.967</td><td class="num">0.727</td><td class="num">1.63</td></tr>
-    <tr><td>UMAP</td><td class="num">0.971</td><td class="num"><strong>0.972</strong></td><td class="num">0.651</td><td class="num">23.01</td></tr>
-    <tr style="background:#fff7e0"><td><strong>Sammon</strong></td><td class="num">0.882</td><td class="num">0.939</td><td class="num"><strong>0.813</strong></td><td class="num">11.46</td></tr>
-  </tbody>
-</table>
+<figure><img src="tables/table1.png" alt="Data table 1" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 1</figcaption></figure>
 </div>
 <p class="caption-src">Source: data/trust-continuity.csv (20 rows), data/pair-distance-correlation.csv (4 rows), data/projection-runtime.csv (4 rows).</p>
 
@@ -248,22 +232,7 @@ flowchart LR
 <p class="caption-top">Table 2. When to use which projection. "Yes" means the projection is fit for purpose; "with caveat" means it works but you should be wary of a specific failure mode; "no" means use something else. Sammon highlighted as the recommended choice for distance and structure questions; bold cells call out the columns where it wins outright.</p>
 
 <div class="table-wrap">
-<table>
-  <thead>
-    <tr>
-      <th>Projection</th>
-      <th>Visual triage of clusters</th>
-      <th>Comparing distances</th>
-      <th>Claiming class separation</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr><td>PCA</td><td>with caveat (linear only)</td><td>yes</td><td>with caveat (rotation-sensitive)</td></tr>
-    <tr><td>t-SNE</td><td>yes</td><td>no</td><td>no (merges nearby classes)</td></tr>
-    <tr><td>UMAP</td><td>yes</td><td>with caveat</td><td>with caveat</td></tr>
-    <tr style="background:#fff7e0"><td><strong>Sammon</strong></td><td>with caveat (less crisp)</td><td><strong>yes</strong></td><td><strong>yes</strong></td></tr>
-  </tbody>
-</table>
+<figure><img src="tables/table2.png" alt="Data table 2" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 2</figcaption></figure>
 </div>
 <p class="caption-src">Source: synthesized from data/trust-continuity.csv, data/pair-distance-correlation.csv, and Figure 4.</p>
 

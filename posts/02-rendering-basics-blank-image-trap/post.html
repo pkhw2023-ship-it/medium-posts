@@ -128,124 +128,7 @@ r.scene.camera.look_at((0, 0, 0), (0.68, 0.51, 1.70), (0, 1, 0))
 <p>That's it. Now the mesh has a known centroid (origin), a known scale (unit sphere), and the camera distance can be a constant — no per-mesh diagonal computation, no <code>if diag &gt; 100</code> special cases. The camera at <code>(0.68, 0.51, 1.70)</code> is 1.9 units from origin, just outside the unit sphere, framing the front-top-right of the object so the silhouette fills 75–85% of the shorter image side.</p>
 <p>I re-ran the same 12 objects through three configurations:</p>
 <p>Table 1. Per-object blank, partial, or interior-clip outcomes for each camera configuration across 12 ModelNet40 meshes.</p>
-<div class="table-wrap"><table>
-<thead>
-<tr>
-<th style="text-align: left;">object</th>
-<th style="text-align: right;">diag</th>
-<th style="text-align: right;">offset</th>
-<th style="text-align: center;">A: origin, dist=3</th>
-<th style="text-align: center;">B: centroid, dist=3</th>
-<th style="text-align: center;">C: normalized</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td style="text-align: left;">monitor_0001</td>
-<td style="text-align: right;">28</td>
-<td style="text-align: right;">4</td>
-<td style="text-align: center;">partial</td>
-<td style="text-align: center;">inside mesh</td>
-<td style="text-align: center;"><strong>render</strong></td>
-</tr>
-<tr>
-<td style="text-align: left;">chair_0050</td>
-<td style="text-align: right;">48</td>
-<td style="text-align: right;">49</td>
-<td style="text-align: center;">blank</td>
-<td style="text-align: center;">inside mesh</td>
-<td style="text-align: center;"><strong>render</strong></td>
-</tr>
-<tr>
-<td style="text-align: left;">chair_0001</td>
-<td style="text-align: right;">48</td>
-<td style="text-align: right;">166</td>
-<td style="text-align: center;">blank</td>
-<td style="text-align: center;">inside mesh</td>
-<td style="text-align: center;"><strong>render</strong></td>
-</tr>
-<tr>
-<td style="text-align: left;">table_0050</td>
-<td style="text-align: right;">55</td>
-<td style="text-align: right;">6</td>
-<td style="text-align: center;">inside mesh</td>
-<td style="text-align: center;">inside mesh</td>
-<td style="text-align: center;"><strong>render</strong></td>
-</tr>
-<tr>
-<td style="text-align: left;">table_0001</td>
-<td style="text-align: right;">77</td>
-<td style="text-align: right;">8</td>
-<td style="text-align: center;">blank</td>
-<td style="text-align: center;">inside mesh</td>
-<td style="text-align: center;"><strong>render</strong></td>
-</tr>
-<tr>
-<td style="text-align: left;">bookshelf_0001</td>
-<td style="text-align: right;">84</td>
-<td style="text-align: right;">1</td>
-<td style="text-align: center;">inside mesh</td>
-<td style="text-align: center;">inside mesh</td>
-<td style="text-align: center;"><strong>render</strong></td>
-</tr>
-<tr>
-<td style="text-align: left;">piano_0001</td>
-<td style="text-align: right;">98</td>
-<td style="text-align: right;">56</td>
-<td style="text-align: center;">blank</td>
-<td style="text-align: center;">inside mesh</td>
-<td style="text-align: center;"><strong>render</strong></td>
-</tr>
-<tr>
-<td style="text-align: left;">sofa_0001</td>
-<td style="text-align: right;">100</td>
-<td style="text-align: right;">8</td>
-<td style="text-align: center;">inside mesh</td>
-<td style="text-align: center;">inside mesh</td>
-<td style="text-align: center;"><strong>render</strong></td>
-</tr>
-<tr>
-<td style="text-align: left;">guitar_0001</td>
-<td style="text-align: right;">106</td>
-<td style="text-align: right;">124</td>
-<td style="text-align: center;">blank</td>
-<td style="text-align: center;">inside mesh</td>
-<td style="text-align: center;"><strong>render</strong></td>
-</tr>
-<tr>
-<td style="text-align: left;">bed_0001</td>
-<td style="text-align: right;">114</td>
-<td style="text-align: right;">182</td>
-<td style="text-align: center;">blank</td>
-<td style="text-align: center;">inside mesh</td>
-<td style="text-align: center;"><strong>render</strong></td>
-</tr>
-<tr>
-<td style="text-align: left;">cup_0001</td>
-<td style="text-align: right;">234</td>
-<td style="text-align: right;">58</td>
-<td style="text-align: center;">blank</td>
-<td style="text-align: center;">inside mesh</td>
-<td style="text-align: center;"><strong>render</strong></td>
-</tr>
-<tr>
-<td style="text-align: left;">car_0001</td>
-<td style="text-align: right;">869</td>
-<td style="text-align: right;">563</td>
-<td style="text-align: center;">blank</td>
-<td style="text-align: center;">inside mesh</td>
-<td style="text-align: center;"><strong>render</strong></td>
-</tr>
-<tr>
-<td style="text-align: left;"><strong>blank rate</strong></td>
-<td style="text-align: right;"></td>
-<td style="text-align: right;"></td>
-<td style="text-align: center;"><strong>8/12</strong></td>
-<td style="text-align: center;"><strong>0/12</strong></td>
-<td style="text-align: center;"><strong>0/12</strong></td>
-</tr>
-</tbody>
-</table></div>
+<div class="table-wrap"><figure><img src="tables/table1.png" alt="Data table 1" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 1</figcaption></figure></div>
 <p>Source: <code>data/blank-rate-by-config.csv</code> (36 rows).</p>
 <p>Config B (just retarget the camera at the centroid) kills the blank-image bug — none of the 12 objects come back empty — but it trades one bug for another. With a fixed distance of 3 and meshes whose diagonals run 28 to 869 units, the camera is now <em>inside</em> nearly every mesh. The image isn't blank but it's a uniform mid-gray slice through the interior. The footprint metric (fraction of non-background pixels) reads 1.0 for every B-config render. Useless to a downstream encoder, but a different kind of useless than blank.</p>
 <p>Config C — centroid-center, unit-sphere normalize, fixed camera distance — is the one that works for everything. Average footprint sits near 13%, spanning ~7% for thin objects like guitars to ~20% for bulkier tables and beds. Always non-zero. Never inside the mesh.</p>
@@ -275,37 +158,7 @@ positions = horizontal_ring(n=8, elev_deg=20)  # 8 points on one ring, slight el
 <h2>Resolution and where the cost actually lives</h2>
 <p>I measured render time across four resolutions, three repeats each, on a Tesla T4 with Open3D's Filament-based <code>OffscreenRenderer</code>:</p>
 <p>Table 2. Per-render time at four image resolutions on a Tesla T4 with Open3D's offscreen Filament renderer.</p>
-<div class="table-wrap"><table>
-<thead>
-<tr>
-<th style="text-align: center;">resolution</th>
-<th style="text-align: right;">ms per render</th>
-<th style="text-align: right;">footprint</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td style="text-align: center;">64 × 64</td>
-<td style="text-align: right;">94</td>
-<td style="text-align: right;">0.113</td>
-</tr>
-<tr>
-<td style="text-align: center;">224 × 224</td>
-<td style="text-align: right;">88</td>
-<td style="text-align: right;">0.098</td>
-</tr>
-<tr>
-<td style="text-align: center;">512 × 512</td>
-<td style="text-align: right;">87</td>
-<td style="text-align: right;">0.095</td>
-</tr>
-<tr>
-<td style="text-align: center;">1024 × 1024</td>
-<td style="text-align: right;">90</td>
-<td style="text-align: right;">0.094</td>
-</tr>
-</tbody>
-</table></div>
+<div class="table-wrap"><figure><img src="tables/table2.png" alt="Data table 2" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 2</figcaption></figure></div>
 <p>Source: <code>data/resolution-time.csv</code> (4 rows).</p>
 <p>The numbers are wrong, or rather they are not the numbers I expected. I expected something like 5 ms, 50 ms, 250 ms, 1000 ms — quadratic in resolution. Instead I got a flat ~90 ms regardless. The fill-rate cost of going from 64² to 1024² pixels is <strong>lost in Open3D's per-call setup overhead</strong>. The actual rasterization is too cheap to measure against scene creation and material binding.</p>
 <p>This is honest data and it's an honest insight: if you are rendering a small dataset with one mesh per render call (like I'm doing), there is no reason to render at 64×64 to "save time." There is no time being saved. Render at the resolution your encoder wants and resize zero times.</p>
@@ -316,54 +169,7 @@ positions = horizontal_ring(n=8, elev_deg=20)  # 8 points on one ring, slight el
 <figure><img alt="Figure 8" src="images/fig-08-failure-pairs.png" /><figcaption><strong>Figure 8.</strong> Four canonical render failures, each shown paired with its fix. Left to right: pointing the camera at the origin when the mesh is far from it; placing the camera so close the near-clip plane cuts through the mesh; using ambient-only lighting so the geometry has no contour shadow; passing an up-vector that doesn't match the mesh's coordinate frame, which tilts the object sideways.</figcaption></figure>
 <p>The last one — wrong up vector — bites everyone once. ModelNet40's axis convention varies by category (chairs are Z-up, beds and monitors are Y-up, tables are ambiguous — Post 01 has the per-category breakdown). ShapeNet is Y-up. PLY files from photogrammetry are usually Z-up. If you copy a render script from a ShapeNet tutorial and run it across a mixed bag, your chairs render lying on their sides while your beds render upright, and your retrieval scores collapse for reasons you cannot debug from the loss curve alone.</p>
 <p>Table 3. The six render bugs I trip over most often, with the symptom, root cause, and the one-line fix.</p>
-<div class="table-wrap"><table>
-<thead>
-<tr>
-<th style="text-align: left;">failure</th>
-<th style="text-align: left;">symptom</th>
-<th style="text-align: left;">cause</th>
-<th style="text-align: left;">fix</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td style="text-align: left;">Blank image</td>
-<td style="text-align: left;">PNG is &gt;99% white</td>
-<td style="text-align: left;">Camera aimed at world origin while mesh sits far from it</td>
-<td style="text-align: left;"><code>look_at(target=centroid)</code>; distance = <code>1.6 × diag</code></td>
-</tr>
-<tr>
-<td style="text-align: left;">Object clipped</td>
-<td style="text-align: left;">Half the object missing or sliced flat</td>
-<td style="text-align: left;">Near/far clipping planes inside the mesh</td>
-<td style="text-align: left;"><code>clipping_range = (0.01, 100.0)</code> or auto from bbox</td>
-</tr>
-<tr>
-<td style="text-align: left;">Washed-out shading</td>
-<td style="text-align: left;">Object visible but flat</td>
-<td style="text-align: left;">Ambient-only lighting; no key direction</td>
-<td style="text-align: left;">Add a directional sun light from upper-front-left</td>
-</tr>
-<tr>
-<td style="text-align: left;">Backface culling</td>
-<td style="text-align: left;">Object renders as outline or vanishes</td>
-<td style="text-align: left;">Face winding inverted; vertex normals point inward</td>
-<td style="text-align: left;"><code>mesh.compute_vertex_normals()</code> or flip face indices</td>
-</tr>
-<tr>
-<td style="text-align: left;">Wrong up vector</td>
-<td style="text-align: left;">Object tilted or upside-down</td>
-<td style="text-align: left;"><code>up=(0,0,1)</code> on a Y-up mesh (or vice versa)</td>
-<td style="text-align: left;">Pick up consistent with the mesh's coordinate frame</td>
-</tr>
-<tr>
-<td style="text-align: left;">Tiny footprint</td>
-<td style="text-align: left;">Object covers &lt;5% of frame</td>
-<td style="text-align: left;">Camera too far for the mesh diagonal</td>
-<td style="text-align: left;"><code>distance = padding × diag / tan(fov/2)</code>, padding ≈ 1.5</td>
-</tr>
-</tbody>
-</table></div>
+<div class="table-wrap"><figure><img src="tables/table3.png" alt="Data table 3" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 3</figcaption></figure></div>
 <p>Source: <code>data/failure-cheatsheet.csv</code>.</p>
 <p>If you remember only one row, remember the up-vector one. It's the only bug on the list that lets you train for hours on tilted chairs without noticing.</p>
 <h2>The twelve-line check that stops the cycle</h2>
@@ -408,48 +214,7 @@ flowchart LR
 <p>Post 03 puts the same chair through four renderer backends (matplotlib, Open3D, PyVista, nvdiffrast) and explains the fifth (Kaolin) that didn't survive a torch-version mismatch; the one whose images downstream encoders agree on is not the one the documentation would have you pick.</p>
 <h2>Reproducibility</h2>
 <p>All code, data, and figures: <code>posts/02-rendering-basics-blank-image-trap/</code>.</p>
-<div class="table-wrap"><table>
-<thead>
-<tr>
-<th style="text-align: left;">Resource</th>
-<th style="text-align: left;">Path</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td style="text-align: left;">Experiment driver</td>
-<td style="text-align: left;"><code>code/blank_render_analysis.py</code></td>
-</tr>
-<tr>
-<td style="text-align: left;">Figure builder</td>
-<td style="text-align: left;"><code>code/make_figures.py</code></td>
-</tr>
-<tr>
-<td style="text-align: left;">Dependencies</td>
-<td style="text-align: left;"><code>code/requirements.txt</code></td>
-</tr>
-<tr>
-<td style="text-align: left;">Blank-rate by configuration (Table 1, Figures 1 and 2)</td>
-<td style="text-align: left;"><code>data/blank-rate-by-config.csv</code> (36 rows)</td>
-</tr>
-<tr>
-<td style="text-align: left;">Azimuth/elevation sweep (Figure 5)</td>
-<td style="text-align: left;"><code>data/sweep-footprint.csv</code> (24 rows)</td>
-</tr>
-<tr>
-<td style="text-align: left;">Lighting comparison (Figure 6)</td>
-<td style="text-align: left;"><code>data/lighting-summary.csv</code> (3 rows)</td>
-</tr>
-<tr>
-<td style="text-align: left;">Resolution timing (Table 2, Figure 7)</td>
-<td style="text-align: left;"><code>data/resolution-time.csv</code> (4 rows)</td>
-</tr>
-<tr>
-<td style="text-align: left;">Failure-mode cheatsheet (Table 3)</td>
-<td style="text-align: left;"><code>data/failure-cheatsheet.csv</code> (6 rows)</td>
-</tr>
-</tbody>
-</table></div>
+<div class="table-wrap"><figure><img src="tables/table4.png" alt="Data table 4" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 4</figcaption></figure></div>
 <p>Run end-to-end on a Tesla T4 (lightsail-shapenet, conda env <code>3d-dedup</code>, Open3D 0.19 with EGL):</p>
 <pre><code class="language-bash">pip install -e shared/                         # install the medium20 package
 cd posts/02-rendering-basics-blank-image-trap

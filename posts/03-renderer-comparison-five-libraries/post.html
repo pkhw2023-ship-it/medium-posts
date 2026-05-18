@@ -122,43 +122,7 @@ Image.fromarray((rgb.clamp(0, 1) * 255).byte().cpu().numpy()[0, ::-1]).save(&quo
 <p>Hold this 1,268 number — it'll come back when we talk about batched training in Post 10.</p>
 <p>Table 1 has the numbers and the peak memory. The throughput here is a single warm-cache run on <code>chair_0001</code> (no averaging — run-to-run variance is around ±5%) and matplotlib is timed over 25 renders instead of 50/100 to keep the wall-clock under a minute; the <code>n_renders</code> column in <code>data/throughput.csv</code> is the source of truth.</p>
 <p>Table 1. Throughput and peak GPU memory on a Tesla T4, 256x256 output, <code>chair_0001</code>, single-threaded, warm cache.</p>
-<div class="table-wrap"><table>
-<thead><tr>
-<th>Library</th>
-<th class="num">Setup LOC</th>
-<th class="num">Batch 1 (RPS)</th>
-<th class="num">Batch 32 (RPS)</th>
-<th class="num">Peak GPU (MB)</th>
-</tr></thead><tbody>
-<tr>
-<td>matplotlib</td>
-<td class="num">9</td>
-<td class="num">5.6</td>
-<td class="num">—</td>
-<td class="num">8</td>
-</tr>
-<tr>
-<td>PyVista</td>
-<td class="num">8</td>
-<td class="num">28.8</td>
-<td class="num">—</td>
-<td class="num">8</td>
-</tr>
-<tr>
-<td>Open3D</td>
-<td class="num">12</td>
-<td class="num">276.4</td>
-<td class="num">—</td>
-<td class="num">8</td>
-</tr>
-<tr>
-<td>nvdiffrast</td>
-<td class="num">24</td>
-<td class="num"><strong>481.4</strong></td>
-<td class="num"><strong>1,267.8</strong></td>
-<td class="num"><strong>243</strong></td>
-</tr>
-</tbody></table></div>
+<div class="table-wrap"><figure><img src="tables/table1.png" alt="Data table 1" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 1</figcaption></figure></div>
 <p>Source: data/throughput.csv joined with data/setup-loc.csv (10 rows).</p>
 <p>Peak GPU memory grows linearly with batch size on nvdiffrast — 16 MB at batch=1, 67 MB at batch=8, 243 MB at batch=32. That linear scaling is what lets you decide a-priori how big a batch fits: a 16 GB T4 with one full mesh buffer holds dozens of batch-32 calls in parallel before you OOM.</p>
 <figure><img src="images/peak-memory.png" alt="Figure 4. Peak GPU memory by batch size for nvdiffrast. The scaling is close to linear in batch, which is what you want — it makes the &quot;how "><figcaption>Figure 4. Peak GPU memory by batch size for nvdiffrast. The scaling is close to linear in batch, which is what you want — it makes the "how big a batch fits in 16 GB" calculation trivial.</figcaption></figure>
@@ -172,44 +136,7 @@ Image.fromarray((rgb.clamp(0, 1) * 255).byte().cpu().numpy()[0, ::-1]).save(&quo
 <p>I lost about an afternoon on this. Each library has its own answer to "which way is up":</p>
 <figure><img src="images/camera-convention-diagram.png" alt="Figure 6. Default up-axis for each library. matplotlib, Open3D, and PyVista all default to +Z up. Kaolin defaults to +Y up. nvdiffrast doesn"><figcaption>Figure 6. Default up-axis for each library. matplotlib, Open3D, and PyVista all default to +Z up. Kaolin defaults to +Y up. nvdiffrast doesn't pick — you hand it your own MVP matrix, so the convention is whatever you build into it.</figcaption></figure>
 <p>Table 2. Default camera convention by library. The "API shape" column is the bit that bites you: matplotlib and nvdiffrast have no <code>look_at(eye, target, up)</code> call at all, so the eye math you write for the other three is not portable to them without an adapter.</p>
-<div class="table-wrap"><table>
-<thead><tr>
-<th>Library</th>
-<th>Up axis</th>
-<th>Default FOV</th>
-<th>API shape</th>
-</tr></thead><tbody>
-<tr>
-<td>matplotlib</td>
-<td>+Z</td>
-<td>—</td>
-<td><code>view_init(elev, azim)</code> — no eye vector, no focal length</td>
-</tr>
-<tr>
-<td>Open3D</td>
-<td>+Z</td>
-<td>60°</td>
-<td><code>setup_camera(fov, target, eye, up)</code></td>
-</tr>
-<tr>
-<td>PyVista</td>
-<td>+Z</td>
-<td>30°</td>
-<td><code>camera_position = [eye, focal_point, view_up]</code></td>
-</tr>
-<tr>
-<td>Kaolin</td>
-<td>+Y</td>
-<td>60°</td>
-<td><code>Camera.from_args(...)</code> — swap Y and Z from the Open3D pose</td>
-</tr>
-<tr>
-<td>nvdiffrast</td>
-<td>user</td>
-<td>—</td>
-<td>no camera object — you hand it your own <code>(B, N, 4)</code> clip-space tensor</td>
-</tr>
-</tbody></table></div>
+<div class="table-wrap"><figure><img src="tables/table2.png" alt="Data table 2" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 2</figcaption></figure></div>
 <p>Source: data/camera-convention.csv (5 rows).</p>
 <p>For matplotlib, Open3D, and PyVista the diagram is reassuring — they all agree on +Z up, right-handed, look-at-the-centroid. The eye position you compute for one works for the other two. If you move to Kaolin, you have to remember to swap a Y and a Z, or your chairs come out sideways. (PyTorch3D has the same issue with a different convention: PyTorch3D's default world is +Y up, +X <strong>left</strong>, +Z <strong>into</strong> the screen.)</p>
 <p>nvdiffrast is the strangest of the bunch in a different way. There is no camera. You pass <code>dr.rasterize</code> a tensor of clip-space coordinates: <code>(B, N, 4)</code>. So the convention is whatever you encode into your projection and view matrices. The view matrix I used in the snippet above does standard look-at with +Z up:</p>
@@ -254,38 +181,7 @@ flowchart TD
 <p>Walked through: gradients put you on nvdiffrast (or Kaolin/PyTorch3D if you want a higher-level API and can afford the install). No gradients but heavy batching pushes you toward CUDA-native libraries anyway. Headless without batching gives you Open3D, which is the workhorse for offline render farms. matplotlib stays in the toolbox for the case where you have a notebook open and you want to see what the mesh you just loaded actually is.</p>
 <p>Table 3 has the per-use-case recommendation:</p>
 <p>Table 3. The renderer I reach for, by job.</p>
-<div class="table-wrap"><table>
-<thead><tr>
-<th>Use case</th>
-<th>Library</th>
-<th>Why</th>
-</tr></thead><tbody>
-<tr>
-<td>Quick debug plot in a notebook</td>
-<td>matplotlib</td>
-<td>Zero install pain; same axes as your data plots.</td>
-</tr>
-<tr>
-<td>Headless batch render of 10k+ objects</td>
-<td>Open3D</td>
-<td>EGL out of the box; materials; no torch dependency.</td>
-</tr>
-<tr>
-<td>Interactive demo or stakeholder figure</td>
-<td>PyVista</td>
-<td>Polished defaults; easy camera; clean screenshots.</td>
-</tr>
-<tr>
-<td>Inverse graphics / shape from rendered loss</td>
-<td>nvdiffrast</td>
-<td>Differentiable rasterization with AA; you bring the shader.</td>
-</tr>
-<tr>
-<td><strong>Bulk multi-view rendering for embedding</strong></td>
-<td><strong>Open3D</strong></td>
-<td><strong>Best throughput per LOC at our 256x256 budget.</strong></td>
-</tr>
-</tbody></table></div>
+<div class="table-wrap"><figure><img src="tables/table3.png" alt="Data table 3" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 3</figcaption></figure></div>
 <p>Source: data/recommendation.csv (5 rows).</p>
 <p>The bold row is the one that matters most for the next 17 posts in this series. We're going to render ten thousand ModelNet40 objects, eight views each, and feed them into CLIP and DINOv2. That's 80,000 renders. At Open3D's 276 RPS that's about 5 minutes of wall time. At PyVista's 29 RPS it would be 46 minutes. At matplotlib's 6 RPS it would be close to four hours. The renderer choice is, in practice, the difference between waiting for coffee and going home for the day.</p>
 <h2>Reproducibility</h2>

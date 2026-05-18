@@ -142,66 +142,7 @@ x = apply_rotations_torch(x, R)            # (B, N, 3) rotated</code></pre>
 
 <div class="table-wrap">
 
-<table>
-  <thead>
-    <tr>
-      <th class="num">K</th>
-      <th class="num">train (min)</th>
-      <th class="num">sec/epoch</th>
-      <th class="num">canonical top-1</th>
-      <th class="num">rotated top-1</th>
-      <th class="num">ECE</th>
-      <th class="num">peak mem (GB)</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td class="num">1</td>
-      <td class="num">12.6</td>
-      <td class="num">7.6</td>
-      <td class="num"><strong>0.867</strong></td>
-      <td class="num">0.240</td>
-      <td class="num">0.606</td>
-      <td class="num">1.11</td>
-    </tr>
-    <tr>
-      <td class="num">4</td>
-      <td class="num">13.8</td>
-      <td class="num">8.3</td>
-      <td class="num">0.325</td>
-      <td class="num">0.201</td>
-      <td class="num">0.481</td>
-      <td class="num">1.12</td>
-    </tr>
-    <tr>
-      <td class="num">16</td>
-      <td class="num">16.0</td>
-      <td class="num">9.6</td>
-      <td class="num">0.395</td>
-      <td class="num">0.404</td>
-      <td class="num">0.195</td>
-      <td class="num">1.12</td>
-    </tr>
-    <tr>
-      <td class="num">64</td>
-      <td class="num">10.1</td>
-      <td class="num">6.1</td>
-      <td class="num">0.502</td>
-      <td class="num">0.610</td>
-      <td class="num">0.046</td>
-      <td class="num">1.12</td>
-    </tr>
-    <tr>
-      <td class="num">256</td>
-      <td class="num">10.0</td>
-      <td class="num">6.0</td>
-      <td class="num">0.684</td>
-      <td class="num"><strong>0.707</strong></td>
-      <td class="num"><strong>0.024</strong></td>
-      <td class="num">1.12</td>
-    </tr>
-  </tbody>
-</table>
+<figure><img src="tables/table1.png" alt="Data table 1" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 1</figcaption></figure>
 
 <p class="caption-src">Source: data/table-1-accuracy-by-k.csv (5 rows).</p>
 
@@ -232,75 +173,7 @@ x = apply_rotations_torch(x, R)            # (B, N, 3) rotated</code></pre>
 
 <div class="table-wrap">
 
-<table>
-  <thead>
-    <tr>
-      <th>class</th>
-      <th class="num">K=1 top-1</th>
-      <th class="num">K=64 top-1</th>
-      <th class="num">gain</th>
-      <th>K=1 top confusion</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>airplane</td>
-      <td class="num">0.272</td>
-      <td class="num">1.000</td>
-      <td class="num">+0.728</td>
-      <td>stairs</td>
-    </tr>
-    <tr>
-      <td>bottle</td>
-      <td class="num">0.214</td>
-      <td class="num">0.910</td>
-      <td class="num">+0.696</td>
-      <td>stairs</td>
-    </tr>
-    <tr>
-      <td>laptop</td>
-      <td class="num">0.310</td>
-      <td class="num">1.000</td>
-      <td class="num">+0.690</td>
-      <td>stairs</td>
-    </tr>
-    <tr>
-      <td>keyboard</td>
-      <td class="num">0.200</td>
-      <td class="num">0.830</td>
-      <td class="num">+0.630</td>
-      <td>stairs</td>
-    </tr>
-    <tr>
-      <td>chair</td>
-      <td class="num">0.230</td>
-      <td class="num">0.858</td>
-      <td class="num">+0.628</td>
-      <td>stairs</td>
-    </tr>
-    <tr>
-      <td>bowl</td>
-      <td class="num">0.270</td>
-      <td class="num">0.880</td>
-      <td class="num">+0.610</td>
-      <td>vase</td>
-    </tr>
-    <tr>
-      <td>cone</td>
-      <td class="num">0.200</td>
-      <td class="num">0.800</td>
-      <td class="num">+0.600</td>
-      <td>radio</td>
-    </tr>
-    <tr>
-      <td>guitar</td>
-      <td class="num">0.388</td>
-      <td class="num">0.982</td>
-      <td class="num">+0.594</td>
-      <td>stairs</td>
-    </tr>
-  </tbody>
-</table>
+<figure><img src="tables/table2.png" alt="Data table 2" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 2</figcaption></figure>
 
 <p class="caption-src">Source: data/table-2-per-class-sensitivity.csv (8 rows).</p>
 
@@ -368,40 +241,7 @@ x = apply_rotations_torch(x, R)            # (B, N, 3) rotated</code></pre>
 
 <p>Every number cited in this post comes from a file in <code>data/</code>. The full pipeline runs end-to-end in about 90 minutes on a single Tesla T4 (5 K-variants × 100 epochs + 4-regime heatmap + bench sweep).</p>
 
-<table>
-  <thead>
-    <tr>
-      <th>Claim in prose</th>
-      <th>File</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>Per-K accuracy and ECE</td>
-      <td><code>data/table-1-accuracy-by-k.csv</code></td>
-    </tr>
-    <tr>
-      <td>Per-class gain</td>
-      <td><code>data/per-class-accuracy.csv</code></td>
-    </tr>
-    <tr>
-      <td>Top confusions per class</td>
-      <td><code>data/confusion-k1.npy</code></td>
-    </tr>
-    <tr>
-      <td>4×4 train-test heatmap</td>
-      <td><code>data/train-test-heatmap.csv</code></td>
-    </tr>
-    <tr>
-      <td>Bench rotation predictions</td>
-      <td><code>data/bench-rotation-predictions.csv</code></td>
-    </tr>
-    <tr>
-      <td>Per-K confusion delta</td>
-      <td><code>data/confusion-delta-1-vs-64.csv</code></td>
-    </tr>
-  </tbody>
-</table>
+<figure><img src="tables/table3.png" alt="Data table 3" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 3</figcaption></figure>
 
 <p>Pinned versions: torch 2.11.0+cu126, numpy 2.2.6, trimesh 4.11.5, sklearn 1.7.2. Hardware: lightsail-shapenet Tesla T4 (15 GB), conda env <code>3d-dedup</code>. Dataset: ModelNet40 (Wu et al. 2015, CC BY-NC). Seeds: training seed 42; rotation-pool seed 1042; SO(3) test-rotation seed 777.</p>
 

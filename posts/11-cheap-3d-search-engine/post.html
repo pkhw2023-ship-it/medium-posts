@@ -107,17 +107,7 @@ D, I = index.search(query[None, :], k=10)</code></pre>
 
 <p>Table 1. All seven index variants on the 7,435-corpus / 480-query split. Latency is single-threaded; memory is process resident peak after build. Bold is the recommended working point.</p>
 
-<div style="overflow-x:auto;"><table>
-<thead><tr><th>Index</th><th>build (s)</th><th>size (MiB)</th><th>recall@5</th><th>recall@10</th><th>recall@50</th><th>p50 (ms)</th><th>p99 (ms)</th><th>RAM peak (GiB)</th></tr></thead>
-<tbody>
-<tr><td>Flat</td><td>0.02</td><td>21.78</td><td>1.000</td><td>1.000</td><td>1.000</td><td>1.960</td><td>2.312</td><td>0.26</td></tr>
-<tr><td>IVF nprobe=1</td><td>0.25</td><td>22.03</td><td>0.785</td><td>0.767</td><td>0.671</td><td>0.085</td><td>0.132</td><td>0.29</td></tr>
-<tr><td>IVF nprobe=4</td><td>0.24</td><td>22.03</td><td>0.969</td><td>0.965</td><td>0.930</td><td>0.229</td><td>0.336</td><td>0.32</td></tr>
-<tr><td>IVF nprobe=16</td><td>0.23</td><td>22.03</td><td>1.000</td><td>1.000</td><td>0.997</td><td>0.714</td><td>0.875</td><td>0.32</td></tr>
-<tr><td>HNSW efSearch=16</td><td>2.92</td><td>23.71</td><td>0.988</td><td>0.988</td><td>0.880</td><td>0.071</td><td>0.130</td><td>0.33</td></tr>
-<tr><td><strong>HNSW efSearch=64</strong></td><td><strong>2.99</strong></td><td><strong>23.71</strong></td><td><strong>0.993</strong></td><td><strong>0.998</strong></td><td><strong>0.997</strong></td><td><strong>0.158</strong></td><td><strong>0.256</strong></td><td><strong>0.33</strong></td></tr>
-<tr><td>HNSW efSearch=256</td><td>2.98</td><td>23.71</td><td>0.993</td><td>0.998</td><td>0.999</td><td>0.537</td><td>0.783</td><td>0.33</td></tr>
-</tbody></table></div>
+<div style="overflow-x:auto;"><figure><img src="tables/table1.png" alt="Data table 1" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 1</figcaption></figure></div>
 
 <p>Source: data/recall-latency-tradeoff.csv (7 rows).</p>
 
@@ -145,16 +135,7 @@ D, I = index.search(query[None, :], k=10)</code></pre>
 
 <p>Table 2. Per-query latency at three corpus scales for Flat (exact) vs HNSW efSearch=64. Single-threaded; HNSW corpus padded with tiny-jitter duplicates of the real 7,915 vectors.</p>
 
-<div style="overflow-x:auto;"><table>
-<thead><tr><th>Index</th><th>n</th><th>p50 (ms)</th><th>p99 (ms)</th></tr></thead>
-<tbody>
-<tr><td>Flat</td><td>1K</td><td>0.247</td><td>0.334</td></tr>
-<tr><td>Flat</td><td>10K</td><td>3.01</td><td>3.29</td></tr>
-<tr><td>Flat</td><td>100K</td><td>31.81</td><td>33.69</td></tr>
-<tr><td>HNSW efSearch=64</td><td>1K</td><td>0.103</td><td>0.151</td></tr>
-<tr><td>HNSW efSearch=64</td><td>10K</td><td>0.162</td><td>0.280</td></tr>
-<tr><td>HNSW efSearch=64</td><td>100K</td><td>0.221</td><td>0.339</td></tr>
-</tbody></table></div>
+<div style="overflow-x:auto;"><figure><img src="tables/table2.png" alt="Data table 2" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 2</figcaption></figure></div>
 
 <p>Source: data/scale-1k-10k-100k.csv (6 rows).</p>
 
@@ -218,20 +199,7 @@ D, I = index.search(query[None, :], k=10)</code></pre>
 
 <h2>Reproducibility</h2>
 
-<div style="overflow-x:auto;"><table>
-<thead><tr><th>Claim in prose</th><th>Data file</th><th>Row(s)</th></tr></thead>
-<tbody>
-<tr><td>7,915 ModelNet40 objects, 40 classes, 8 views, 224×224</td><td>data/embed-wall-clock.json</td><td>n_objects, n_views, image_size</td></tr>
-<tr><td>Render total 2,338.87 s; embed total 820.93 s</td><td>data/embed-wall-clock.json</td><td>render_total_s, embed_total_s</td></tr>
-<tr><td>Wall total 3,159.8 s ≈ $0.31 at $0.35/hr T4</td><td>data/embed-wall-clock.json</td><td>wall_total_s, implied_usd_at_0_35_per_hr</td></tr>
-<tr><td>Flat: p50 1.96 ms, recall=1.0</td><td>data/recall-latency-tradeoff.csv</td><td>Flat row</td></tr>
-<tr><td>HNSW efSearch=64: p50 0.158 ms, r@10 0.998</td><td>data/recall-latency-tradeoff.csv</td><td>HNSW-efSearch=64 row</td></tr>
-<tr><td>IVF nprobe=16: p50 0.714 ms, r@10 1.000</td><td>data/recall-latency-tradeoff.csv</td><td>IVF-nprobe=16 row</td></tr>
-<tr><td>View ablation: 1→0.525, 4→0.597, 8→0.611, 16→0.622, 28→0.620</td><td>data/view-count-ablation.csv</td><td>all 5 rows</td></tr>
-<tr><td>100K HNSW: p50 0.221 ms, 319 MiB</td><td>data/scale-1k-10k-100k.csv</td><td>n=100000 HNSW row</td></tr>
-<tr><td>100K Flat: p50 31.8 ms, 293 MiB</td><td>data/scale-1k-10k-100k.csv</td><td>n=100000 Flat row</td></tr>
-<tr><td>Index build time: HNSW 2.99 s, Flat 0.02 s, IVF 0.23 s</td><td>data/index-build-stats.csv</td><td>all rows</td></tr>
-</tbody></table></div>
+<div style="overflow-x:auto;"><figure><img src="tables/table3.png" alt="Data table 3" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 3</figcaption></figure></div>
 
 <p>Hardware: <code>lightsail-shapenet</code> Tesla T4, conda env <code>3d-dedup</code>.</p>
 

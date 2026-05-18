@@ -250,25 +250,7 @@ digest = xxhash.xxh64(bytes_).hexdigest()             # 'e6d236bdf621357a'
 <p><em>Table 1.</em> Voxel-hash precision and recall by perturbation and resolution on 300 ModelNet40 objects.</p>
 
 <div style="overflow-x:auto">
-<table>
-  <thead>
-  <tr>
-    <th>Clone perturbation</th>
-    <th class="num">res-16 P</th><th class="num">res-16 R</th>
-    <th class="num">res-32 P</th><th class="num">res-32 R</th>
-    <th class="num">res-64 P</th><th class="num">res-64 R</th>
-  </tr>
-  </thead>
-  <tbody>
-  <tr><td>Rotation (avg of 3 trials)</td><td class="num"><strong>0.993</strong></td><td class="num"><strong>0.991</strong></td><td class="num"><strong>0.993</strong></td><td class="num"><strong>0.972</strong></td><td class="num"><strong>0.993</strong></td><td class="num"><strong>0.952</strong></td></tr>
-  <tr><td>Decimation, keep 75%</td><td class="num">—</td><td class="num">0.000</td><td class="num">—</td><td class="num">0.000</td><td class="num">—</td><td class="num">0.000</td></tr>
-  <tr><td>Decimation, keep 50%</td><td class="num">—</td><td class="num">0.000</td><td class="num">—</td><td class="num">0.000</td><td class="num">—</td><td class="num">0.000</td></tr>
-  <tr><td>Decimation, keep 25%</td><td class="num">—</td><td class="num">0.000</td><td class="num">—</td><td class="num">0.000</td><td class="num">—</td><td class="num">0.000</td></tr>
-  <tr><td>Noise σ = 1% bbox</td><td class="num">—</td><td class="num">0.000</td><td class="num">—</td><td class="num">0.000</td><td class="num">—</td><td class="num">0.000</td></tr>
-  <tr><td>Noise σ = 3% bbox</td><td class="num">—</td><td class="num">0.000</td><td class="num">—</td><td class="num">0.000</td><td class="num">—</td><td class="num">0.000</td></tr>
-  <tr><td>Noise σ = 5% bbox</td><td class="num">—</td><td class="num">0.000</td><td class="num">—</td><td class="num">0.000</td><td class="num">—</td><td class="num">0.000</td></tr>
-  </tbody>
-</table>
+<figure><img src="tables/table1.png" alt="Data table 1" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 1</figcaption></figure>
 </div>
 
 <p>Source: <code>data/precision-recall.csv</code> (27 rows). Precision is reported as "—" when the hash made zero positive predictions for that row — see the noise / decimation rows. The CSV stores those cells as 1.0 (the convention used when computing); the table uses "—" to make the vacuousness obvious.</p>
@@ -276,19 +258,7 @@ digest = xxhash.xxh64(bytes_).hexdigest()             # 'e6d236bdf621357a'
 <p><em>Table 2.</em> When voxel hashing is the right tool, and when to reach for something else.</p>
 
 <div style="overflow-x:auto">
-<table>
-  <thead>
-  <tr><th>Use case</th><th>Verdict</th><th>Why</th><th>Reach for instead</th></tr>
-  </thead>
-  <tbody>
-  <tr><td>Re-upload of identical mesh</td><td>Strong</td><td>Bit-equality after canonicalization; no accidental collisions at resolution ≥ 16</td><td>—</td></tr>
-  <tr><td>Rotated re-upload</td><td>Strong</td><td>PCA plus skewness flip erases rotation; recall &gt; 0.97 at resolution 32</td><td>—</td></tr>
-  <tr><td>Re-mesh with different tessellation, no noise</td><td>OK</td><td>Recovers when occupancy stays inside the same voxels</td><td>Multi-view CLIP for the misses</td></tr>
-  <tr><td>Decimation at any level</td><td>Weak</td><td>Even mild decimation moves enough voxels that the hash flips</td><td>Multi-view embedding plus chamfer fallback</td></tr>
-  <tr><td>≥ 1% surface noise</td><td>Weak</td><td>Hash is bit-exact; sub-voxel drift already flips the result</td><td>Zernike (Post 07) or multi-view DINOv2 (Post 11)</td></tr>
-  <tr><td>Semantically-similar but distinct objects</td><td>Avoid</td><td>Hash has zero notion of similarity, only equality</td><td>Embedding plus cosine search (Posts 11, 12)</td></tr>
-  </tbody>
-</table>
+<figure><img src="tables/table2.png" alt="Data table 2" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 2</figcaption></figure>
 </div>
 
 <p>Source: <code>data/use-case-cheatsheet.csv</code> (6 rows).</p>
@@ -318,16 +288,7 @@ digest = xxhash.xxh64(bytes_).hexdigest()             # 'e6d236bdf621357a'
 <p>Numeric claims in the prose trace to these files:</p>
 
 <div style="overflow-x:auto">
-<table>
-  <thead><tr><th>Claim</th><th>File</th></tr></thead>
-  <tbody>
-  <tr><td>Rotation recall 0.972 at resolution 32</td><td><code>data/precision-recall.csv</code></td></tr>
-  <tr><td>Collision rate 2.7e-4 at resolution 8, 2.2e-5 at resolution 16+</td><td><code>data/collision-curve.csv</code></td></tr>
-  <tr><td>Rotation recall without canonicalization</td><td><code>data/canonicalization-ablation.csv</code></td></tr>
-  <tr><td>Per-perturbation P/R table</td><td><code>data/precision-recall.csv</code></td></tr>
-  <tr><td>chair_0004 / chair_0015 dataset duplicate</td><td><code>data/gallery-pairs.json</code> and <code>data/canonical-hashes.csv</code></td></tr>
-  </tbody>
-</table>
+<figure><img src="tables/table3.png" alt="Data table 3" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 3</figcaption></figure>
 </div>
 
 

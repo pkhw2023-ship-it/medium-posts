@@ -220,26 +220,7 @@ imgs = render_open3d(mesh, cams, image_size=224)  # (8, 224, 224, 3)
 <p class="caption-top">Table 1. Bakeoff summary. Build time and dimension are from <code>data/descriptor-meta.csv</code>; mAP columns are from <code>data/retrieval-at-rotation.csv</code>. Bold values are best in column. Multi-view CLIP wins absolute accuracy at every angle; Zernike wins on the rotation gap; eigen-spectrum wins on bytes per object.</p>
 
 <div class="table-wrap">
-<table>
-  <thead>
-    <tr>
-      <th>Descriptor</th>
-      <th class="num">mAP@5, 0°</th>
-      <th class="num">mAP@5, 90°</th>
-      <th class="num">mAP@5, 180°</th>
-      <th class="num">Dim</th>
-      <th class="num">Build (ms)</th>
-      <th>Training?</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr><td>Multi-view CLIP</td><td class="num"><strong>0.870</strong></td><td class="num">0.583</td><td class="num">0.625</td><td class="num">512</td><td class="num">741</td><td>pretrained</td></tr>
-    <tr><td>ZernikeApprox</td><td class="num">0.689</td><td class="num"><strong>0.649</strong></td><td class="num"><strong>0.621</strong></td><td class="num">45</td><td class="num">146</td><td>no</td></tr>
-    <tr><td>PointNet proxy</td><td class="num">0.677</td><td class="num">0.130</td><td class="num">0.216</td><td class="num">19</td><td class="num"><strong>2</strong></td><td>no</td></tr>
-    <tr><td>Spherical harmonics</td><td class="num">0.514</td><td class="num">0.507</td><td class="num">0.507</td><td class="num">144</td><td class="num">101</td><td>no</td></tr>
-    <tr><td>Eigen-spectrum</td><td class="num">0.263</td><td class="num">0.259</td><td class="num">0.246</td><td class="num"><strong>32</strong></td><td class="num">128</td><td>no</td></tr>
-  </tbody>
-</table>
+<figure><img src="tables/table1.png" alt="Data table 1" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 1</figcaption></figure>
 </div>
 
 <p class="caption-src">Source: <code>data/retrieval-at-rotation.csv</code> (25 rows), <code>data/descriptor-meta.csv</code> (5 rows).</p>
@@ -251,17 +232,7 @@ imgs = render_open3d(mesh, cams, image_size=224)  # (8, 224, 224, 3)
 <p class="caption-top">Table 2. Which descriptor I would reach for, by use case. The rationale for each pick is the row that won the corresponding column in Table 1 above.</p>
 
 <div class="table-wrap">
-<table>
-  <thead>
-    <tr><th>Use case</th><th>Pick</th><th>Why</th></tr>
-  </thead>
-  <tbody>
-    <tr><td>Pure-geometry retrieval (CAD, no textures)</td><td>Spherical harmonics</td><td>Rotation-tolerant by design, 144-D, no GPU.</td></tr>
-    <tr><td>Textured / general 3D retrieval</td><td>Multi-view CLIP</td><td>Highest mAP at canonical; degrades gracefully under rotation.</td></tr>
-    <tr><td>Tiny embedding budget (&lt;256 bytes/object)</td><td>Eigen-spectrum (Shape DNA)</td><td>32 floats, provably isometry-invariant.</td></tr>
-    <tr><td>No training data, no GPU</td><td>ZernikeApprox</td><td>45-D, rotation-invariant magnitudes, pure CPU.</td></tr>
-  </tbody>
-</table>
+<figure><img src="tables/table2.png" alt="Data table 2" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 2</figcaption></figure>
 </div>
 
 <p class="caption-src">Source: <code>data/recommendation.csv</code> (4 rows).</p>

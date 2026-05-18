@@ -209,24 +209,7 @@ flowchart LR
 <p>Table 1. Threshold and recall to hit precision 0.95 at four positive base rates, on cosine similarity over normalised embeddings. Bold marks the baseline 50/50 calibration row per encoder.</p>
 
 <div style="overflow-x:auto">
-<table>
-<thead>
-<tr><th>Encoder</th><th class="num">Base rate</th><th class="num">Threshold</th><th class="num">Recall at threshold</th></tr>
-</thead>
-<tbody>
-<tr><td>CLIP ViT-B/32</td><td class="num">50%</td><td class="num">0.964</td><td class="num"><strong>0.99</strong></td></tr>
-<tr><td>CLIP ViT-B/32</td><td class="num">20%</td><td class="num">0.972</td><td class="num">0.95</td></tr>
-<tr><td>CLIP ViT-B/32</td><td class="num">5%</td><td class="num">0.981</td><td class="num">0.85</td></tr>
-<tr><td>CLIP ViT-B/32</td><td class="num">1%</td><td class="num">0.986</td><td class="num">0.71</td></tr>
-<tr><td>DINOv2 ViT-B/14</td><td class="num">50%</td><td class="num">0.774</td><td class="num"><strong>1.00</strong></td></tr>
-<tr><td>DINOv2 ViT-B/14</td><td class="num">20%</td><td class="num">0.821</td><td class="num">1.00</td></tr>
-<tr><td>DINOv2 ViT-B/14</td><td class="num">5%</td><td class="num">0.860</td><td class="num">1.00</td></tr>
-<tr><td>DINOv2 ViT-B/14</td><td class="num">1%</td><td class="num">0.877</td><td class="num">1.00</td></tr>
-<tr><td>PointNet-proxy</td><td class="num">50%</td><td class="num">0.947</td><td class="num">0.17</td></tr>
-<tr><td>PointNet-proxy</td><td class="num">20%</td><td class="num">0.984</td><td class="num">0.01</td></tr>
-<tr><td>PointNet-proxy</td><td class="num">5%</td><td class="num">0.984</td><td class="num">0.01</td></tr>
-</tbody>
-</table>
+<figure><img src="tables/table1.png" alt="Data table 1" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 1</figcaption></figure>
 </div>
 <p class="source">Source: data/threshold-by-base-rate.csv.</p>
 
@@ -271,28 +254,7 @@ flowchart LR
 <p>Table 2. What to do for the three setups you will encounter.</p>
 
 <div style="overflow-x:auto">
-<table>
-<thead>
-<tr><th>Situation</th><th>What to do</th><th>What to watch</th></tr>
-</thead>
-<tbody>
-<tr>
-  <td>Labeled hold-out exists</td>
-  <td>Sweep thresholds on the hold-out, pick at production-relevant base rate, recalibrate quarterly.</td>
-  <td>Concept drift in the labeled set; relabel if encoder changes.</td>
-</tr>
-<tr>
-  <td>Pseudo-positives only (you are here)</td>
-  <td>Build 1-2K perturbation pairs, mine top-K hard negatives, calibrate at one precision level above your shipping target, recalibrate on encoder swap.</td>
-  <td>Real near-duplicates are harder than perturbations — budget 5-10 points of recall slack.</td>
-</tr>
-<tr>
-  <td>Production base rate has skewed</td>
-  <td>Estimate base rate weekly (stratified sample, label, reweight), re-pick threshold each time it shifts by more than 2x.</td>
-  <td>Sampling bias: do not sample only top-scoring items.</td>
-</tr>
-</tbody>
-</table>
+<figure><img src="tables/table2.png" alt="Data table 2" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 2</figcaption></figure>
 </div>
 <p class="source">Source: synthesized from the experiments above.</p>
 

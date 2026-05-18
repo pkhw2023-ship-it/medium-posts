@@ -111,13 +111,7 @@ print(vox.shape, vox.sum())                # → (32, 32, 32) 569.0</code></pre>
 <p>Table 1 has the cost numbers. The choice between 16, 32, and 64 is really a choice about what the descriptor needs to see. Sixteen smears the back-and-seat distinction into one block; if you want any chance of telling a chair from a sofa, you need at least 32. Sixty-four buys you the leg detail but costs five times the wall time at the integration step that comes next.</p>
 <div style="overflow-x:auto">
 <p>Table 1. Voxelization and Zernike-invariant cost on chair_0001 at three resolutions. Resolution 32 sits at the knee — it's 5x cheaper than 64 and still resolves the seat/back gap.</p>
-<div class="table-wrap"><table>
-<thead><tr><th>Resolution</th><th class="num">Voxels occupied</th><th class="num">Voxelize (s)</th><th class="num">Invariants (s)</th><th class="num">Total (s)</th><th class="num">n_invariants</th></tr></thead>
-<tbody>
-<tr><td>16³</td><td class="num">195</td><td class="num">0.044</td><td class="num">0.009</td><td class="num">0.053</td><td class="num">66</td></tr>
-<tr><td><strong>32³</strong></td><td class="num"><strong>569</strong></td><td class="num"><strong>0.149</strong></td><td class="num"><strong>0.014</strong></td><td class="num"><strong>0.163</strong></td><td class="num"><strong>66</strong></td></tr>
-<tr><td>64³</td><td class="num">1,931</td><td class="num">0.706</td><td class="num">0.037</td><td class="num">0.743</td><td class="num">66</td></tr>
-</tbody></table></div>
+<div class="table-wrap"><figure><img src="tables/table1.png" alt="Data table 1" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 1</figcaption></figure></div>
 <p>Source: data/voxel-resolution-sweep.csv (3 rows).</p>
 </div>
 <p>32 is what I default to in the shared kit, and what every subsequent figure in this post uses unless I say otherwise.</p>
@@ -175,23 +169,7 @@ print(len(nonzero_odd_l))   # → 0</code></pre>
 <p>The full unit-test table:</p>
 <div style="overflow-x:auto">
 <p>Table 2. Structural unit tests on the unit sphere and unit cube at 64³ voxel resolution. "rel" is the magnitude divided by the largest coefficient in that shape's descriptor. 73 of 81 rows pass: the sphere's <code>F_{0,0}</code> is one "no" (low because the innermost shell holds the smallest occupancy share when we normalize across the whole volume), and the seven other failures are all in the cube's outer shells (n ∈ {6, 7, 8}, vanishing-l slots) where voxel-aliasing breaks the perfect octahedral symmetry the algebra promises. All eight failures stay below 10% relative magnitude; symmetry-implied-zero coefficients in the inner shells sit at 10⁻¹⁸.</p>
-<div class="table-wrap"><table>
-<thead><tr><th>Object</th><th>(n, l)</th><th class="num">Computed magnitude</th><th class="num">Rel to max</th><th>Expected</th><th>Pass</th></tr></thead>
-<tbody>
-<tr><td>sphere</td><td>(0, 0)</td><td class="num">1.8e-04</td><td class="num">0.003</td><td>non-zero</td><td>no¹</td></tr>
-<tr><td>sphere</td><td>(1, 0)</td><td class="num">1.5e-03</td><td class="num">0.022</td><td>non-zero</td><td>yes</td></tr>
-<tr><td>sphere</td><td>(1, 1)</td><td class="num">2.9e-20</td><td class="num">0.000</td><td>~0 (l≠0 forbidden)</td><td>yes</td></tr>
-<tr><td>sphere</td><td>(2, 0)</td><td class="num">4.0e-03</td><td class="num">0.058</td><td>non-zero</td><td>yes</td></tr>
-<tr><td>sphere</td><td>(2, 2)</td><td class="num">5.5e-19</td><td class="num">0.000</td><td>~0 (l≠0 forbidden)</td><td>yes</td></tr>
-<tr><td>cube</td><td>(1, 1)</td><td class="num">7.9e-20</td><td class="num">0.000</td><td>~0 (l=1 vanishes)</td><td>yes</td></tr>
-<tr><td>cube</td><td>(3, 0)</td><td class="num">2.2e-02</td><td class="num">0.336</td><td>non-zero (l=0)</td><td>yes</td></tr>
-<tr><td>cube</td><td>(5, 0)</td><td class="num">5.2e-02</td><td class="num">0.808</td><td>non-zero (l=0)</td><td>yes</td></tr>
-<tr><td>cube</td><td>(3, 2)</td><td class="num">1.6e-18</td><td class="num">0.000</td><td>~0 (l=2 vanishes too)</td><td>yes</td></tr>
-<tr><td>cube</td><td>(6, 0)</td><td class="num">6.5e-02</td><td class="num">1.000</td><td>non-zero (l=0)</td><td>yes</td></tr>
-<tr><td>cube</td><td>(6, 4)</td><td class="num">1.1e-02</td><td class="num">0.171</td><td>non-zero (l=4 survives)</td><td>yes</td></tr>
-<tr><td>cube</td><td>(7, 7)</td><td class="num">5.3e-03</td><td class="num">0.083</td><td>~0 (l=7 vanishes)</td><td>no²</td></tr>
-<tr><td>cube</td><td>(10, 0)</td><td class="num">1.3e-03</td><td class="num">0.020</td><td>non-zero (l=0)</td><td>yes</td></tr>
-</tbody></table></div>
+<div class="table-wrap"><figure><img src="tables/table2.png" alt="Data table 2" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 2</figcaption></figure></div>
 <p>¹ The sphere is filled at 145,384 voxels at 64³, with 88 in the innermost shell (<code>r < 1/11</code>). The descriptor is normalized by total occupancy across all shells, so the inner shell's coefficient picks up its small volume share: <code>F_{0,0} ≈ Y_0^0 × 88 / 145,384 ≈ 1.7e-04</code>, which matches the measured 1.8e-04 to floating-point noise. The other 14 sphere rows all pass.</p>
 <p>² One of seven outer-shell cube failures (all in n ∈ {6, 7, 8}). Octahedral symmetry says <code>cube (7, 7)</code> should be exactly zero; voxelizing a cube into a 64³ grid breaks the symmetry by ~8% on this row. Inner-shell vanishing-l coefficients (n ≤ 5) all sit at 10⁻¹⁸ — the algebra is exact when the discretization cooperates.</p>
 <p>Source: data/unit-tests.csv (81 rows).</p>
@@ -224,21 +202,7 @@ print(len(nonzero_odd_l))   # → 0</code></pre>
 <p>The overall number is 0.46. Multi-view DINOv2 from Post 05 hits 0.76 on the same pool. Zernike loses by a wide margin overall and wins on nothing — but the <em>per-class</em> picture has more in it than the headline.</p>
 <div style="overflow-x:auto">
 <p>Table 3. Per-class retrieval@5 (cosine similarity over 66-D Zernike descriptors), top-1 confused class, and how many of the 20 queries had their top-1 match in that class instead of the correct one. Bold marks the three classes where Zernike resolves above 0.75 mAP@5; the rest sit at or near chance. Cars get a perfect 1.00 on top-1 (no class ever pulled a car as its nearest neighbor over the correct car); chairs/tables/benches/sofas all confuse each other.</p>
-<div class="table-wrap"><table>
-<thead><tr><th>Class</th><th class="num">n_objects</th><th class="num">mAP@5 (cosine)</th><th>Top-1 confused class</th><th class="num">Confused count (of 20)</th></tr></thead>
-<tbody>
-<tr><td>airplane</td><td class="num">20</td><td class="num"><strong>0.94</strong></td><td>guitar</td><td class="num">1</td></tr>
-<tr><td>car</td><td class="num">20</td><td class="num"><strong>0.86</strong></td><td>airplane</td><td class="num">0</td></tr>
-<tr><td>guitar</td><td class="num">20</td><td class="num"><strong>0.77</strong></td><td>sofa</td><td class="num">1</td></tr>
-<tr><td>bed</td><td class="num">20</td><td class="num">0.49</td><td>bookshelf</td><td class="num">5</td></tr>
-<tr><td>sofa</td><td class="num">20</td><td class="num">0.36</td><td>bookshelf</td><td class="num">2</td></tr>
-<tr><td>chair</td><td class="num">20</td><td class="num">0.35</td><td>airplane</td><td class="num">3</td></tr>
-<tr><td>bench</td><td class="num">20</td><td class="num">0.29</td><td>sofa</td><td class="num">7</td></tr>
-<tr><td>bookshelf</td><td class="num">20</td><td class="num">0.25</td><td>bed</td><td class="num">5</td></tr>
-<tr><td>lamp</td><td class="num">20</td><td class="num">0.21</td><td>table</td><td class="num">3</td></tr>
-<tr><td>table</td><td class="num">20</td><td class="num">0.10</td><td>bookshelf</td><td class="num">5</td></tr>
-<tr><td>OVERALL</td><td class="num">200</td><td class="num">0.46</td><td>—</td><td class="num">—</td></tr>
-</tbody></table></div>
+<div class="table-wrap"><figure><img src="tables/table3.png" alt="Data table 3" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 3</figcaption></figure></div>
 <p>Source: data/retrieval-at-5.csv (11 rows).</p>
 </div>
 <p>The bimodality is the interesting part. Three classes are near-perfect; six are at chance or just above. The confusion matrix tells you what's happening.</p>
@@ -259,18 +223,7 @@ print(len(nonzero_odd_l))   # → 0</code></pre>
 <p>Zernike-style invariants are a one-page recipe — voxelize, project each shell onto spherical harmonics, take the per-degree magnitudes — that gives you a 66-D rotation-invariant signature in under a second per object, no training required. They are the descriptor I reach for when I want a rotation-invariant baseline and don't want to load a few hundred megabytes of ViT weights. The shipped implementation is the per-shell SH approximation; the algebra that makes it rotation-invariant is identical to the textbook recipe.</p>
 <p>The half of the basis that does the real work in rotation-invariance is the spherical harmonics — the radial part is just bookkeeping for where in the volume each coefficient lives. Post 08 keeps the SH half and throws out the radial half entirely: render the object's surface as a function on the sphere, take the SH power spectrum. Same trick, fewer numbers — and a failure mode that makes the chair-vs-airplane confusion in Figure 9 look modest.</p>
 <h2>Reproducibility</h2>
-<div class="table-wrap"><table>
-<thead><tr><th>Claim in prose</th><th>Where the number lives</th></tr></thead>
-<tbody>
-<tr><td>Descriptor is 66 numbers at n_max=10</td><td>data/invariants.npy shape (200, 66)</td></tr>
-<tr><td>Voxelize+invariants at 32³: 0.163 s</td><td>data/voxel-resolution-sweep.csv row res=32</td></tr>
-<tr><td>Cosine drift mean 0.027 on 200 pairs</td><td>data/rotation-stability-cosine.csv (200 rows)</td></tr>
-<tr><td>L2 relative drift mean 0.221 on same pairs</td><td>data/rotation-stability-l2.csv (200 rows)</td></tr>
-<tr><td>Overall mAP@5 = 0.46</td><td>data/retrieval-at-5.csv row OVERALL</td></tr>
-<tr><td>airplane mAP@5 = 0.94, car 0.86, guitar 0.77</td><td>data/retrieval-at-5.csv</td></tr>
-<tr><td>chair confuses airplane on 3/20 top-1</td><td>data/confusion-matrix.csv chair row</td></tr>
-<tr><td>Sphere l≠0 coefficients all under 5% of max</td><td>data/unit-tests.csv sphere rows</td></tr>
-</tbody></table></div>
+<div class="table-wrap"><figure><img src="tables/table4.png" alt="Data table 4" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 4</figcaption></figure></div>
 <p>Pinned library versions: <code>trimesh 4.11.5</code>, <code>numpy 2.2.6</code>, <code>scipy 1.15+</code> (for <code>sph_harm_y</code>; on older scipy the kit falls back to the deprecated <code>sph_harm</code>), <code>matplotlib 3.10.1</code>, <code>faiss-cpu 1.14.1</code>. Hardware: <code>lightsail-shapenet</code> Tesla T4 (the algorithm itself is CPU-bound; the T4 is not used). Conda env <code>3d-dedup</code>. Dataset: ModelNet40 (Wu et al. 2015, CC BY-NC). Run command: <code>python code/main.py</code> (about 7 minutes wall-clock for the full pool), then <code>python code/make_visuals.py</code> and <code>python code/make_basis_grid.py</code> for the figures. Rotation-stability sweep samples the first 5 alphabetically-sorted train OFFs from each of the 10 pool classes (50 objects total), each rotated 4 times with seed 42 driving the QR-decomposition uniform-SO(3) sampler.</p>
 <h2>References</h2>
 <p>- Novotni, M. and Klein, R. <em>3D Zernike Descriptors for Content Based Shape Retrieval</em>. ACM Symposium on Solid Modeling and Applications, 2003. — The full polynomial-basis recipe and the rotation-invariance identity used here. - Kazhdan, M., Funkhouser, T., and Rusinkiewicz, S. <em>Rotation Invariant Spherical Harmonic Representation of 3D Shape Descriptors</em>. Eurographics Symposium on Geometry Processing, 2003. — The companion paper that uses the same SH-power identity, without the radial polynomial. - Zernike, F. <em>Beugungstheorie des Schneidenverfahrens und seiner verbesserten Form, der Phasenkontrastmethode</em>. Physica 1 (8): 689–704, 1934. — The original 2D Zernike polynomials, from which the 3D extension descends. - Wu, Z. et al. <em>3D ShapeNets: A Deep Representation for Volumetric Shapes</em>. CVPR 2015. — The ModelNet40 dataset used for retrieval evaluation.</p>

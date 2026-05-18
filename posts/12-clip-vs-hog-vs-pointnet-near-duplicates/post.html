@@ -210,18 +210,7 @@ flowchart LR
 <p class="caption-top">Table 1. PR-AUC by descriptor across the five decimation magnitudes (fraction of faces retained).</p>
 
 <div class="table-wrap">
-<table>
-  <thead>
-    <tr><th>Magnitude</th><th class="num">CLIP-mv</th><th class="num">HOG-fv</th><th class="num">PointNet-proxy</th></tr>
-  </thead>
-  <tbody>
-    <tr><td>90% faces retained</td><td class="num"><strong>0.83</strong></td><td class="num">0.81</td><td class="num">0.67</td></tr>
-    <tr><td>75%</td><td class="num">0.74</td><td class="num"><strong>0.76</strong></td><td class="num">0.57</td></tr>
-    <tr><td>50%</td><td class="num">0.53</td><td class="num"><strong>0.63</strong></td><td class="num">0.48</td></tr>
-    <tr><td>25%</td><td class="num">0.39</td><td class="num"><strong>0.43</strong></td><td class="num">0.30</td></tr>
-    <tr><td>10%</td><td class="num">0.30</td><td class="num"><strong>0.32</strong></td><td class="num">0.17</td></tr>
-  </tbody>
-</table>
+<figure><img src="tables/table1.png" alt="Data table 1" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 1</figcaption></figure>
 </div>
 
 <p class="caption-src">Source: <code>data/pr-auc-per-perturbation.csv</code> (rows perturbation=decimation).</p>
@@ -277,16 +266,7 @@ flowchart LR
 <p class="caption-top">Table 2. Per-descriptor cost on a Tesla T4 / one CPU core, plus index size for a 10,000-object gallery. Front-view chair_0001, mean over 20 timing reps.</p>
 
 <div class="table-wrap">
-<table>
-  <thead>
-    <tr><th>Descriptor</th><th class="num">Dim</th><th class="num">GPU embed (ms/obj)</th><th class="num">CPU embed (ms/obj)</th><th class="num">Index for 10K (MiB)</th></tr>
-  </thead>
-  <tbody>
-    <tr><td>CLIP-mv</td><td class="num">512</td><td class="num">31.2</td><td class="num">176.2</td><td class="num"><strong>19.5</strong></td></tr>
-    <tr><td>HOG-fv</td><td class="num">6,084</td><td class="num">9.2</td><td class="num">9.2</td><td class="num">232.1</td></tr>
-    <tr><td>PointNet-proxy</td><td class="num"><strong>19</strong></td><td class="num"><strong>1.8</strong></td><td class="num"><strong>1.8</strong></td><td class="num"><strong>0.7</strong></td></tr>
-  </tbody>
-</table>
+<figure><img src="tables/table2.png" alt="Data table 2" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 2</figcaption></figure>
 </div>
 
 <p class="caption-src">Source: <code>data/descriptor-cost.csv</code> (3 rows). Measured on <code>lightsail-shapenet</code> (Tesla T4) with conda env <code>3d-dedup</code>. GPU/CPU numbers include the 8-view render — without that, CLIP's encode-only cost is around 12 ms on the T4.</p>
@@ -300,17 +280,7 @@ flowchart LR
 <p class="caption-top">Table 3. Descriptor recommendations by perturbation distribution.</p>
 
 <div class="table-wrap">
-<table>
-  <thead>
-    <tr><th>If your near-duplicates are mostly...</th><th>Use</th><th>Why</th></tr>
-  </thead>
-  <tbody>
-    <tr><td>pose / rotation variants</td><td>CLIP-mv</td><td>only descriptor still useful past 45° rotation (PR-AUC 0.34 vs HOG 0.03 at 90°)</td></tr>
-    <tr><td>LOD / decimation / mesh-thinning</td><td>HOG-fv</td><td>wins decimation at every magnitude past 75% retained; CPU-only</td></tr>
-    <tr><td>surface noise / vertex jitter</td><td>HOG-fv</td><td>22 points of mean PR-AUC over CLIP, runs on CPU</td></tr>
-    <tr><td>retexture / appearance only</td><td>CLIP-mv or PointNet-proxy</td><td>both 0.96+ here; PointNet wins vacuously, CLIP wins meaningfully</td></tr>
-  </tbody>
-</table>
+<figure><img src="tables/table3.png" alt="Data table 3" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 3</figcaption></figure>
 </div>
 
 <p>Read down the right column — every row's "why" is a measured number from Figure 5, not a vibe. The picks change as the perturbation distribution changes, and that is the whole point of running the test suite before picking the descriptor.</p>
@@ -341,21 +311,7 @@ python code/make_visuals.py    # ~15 s
 <p>The end-of-post numbers map to files as follows:</p>
 
 <div class="table-wrap">
-<table>
-  <thead>
-    <tr><th>Claim in prose</th><th>Source file</th></tr>
-  </thead>
-  <tbody>
-    <tr><td>CLIP loses 35 points to HOG at noise σ=0.025</td><td><code>data/pr-auc-per-perturbation.csv</code> rows <code>clip-mv,noise,2</code> and <code>hog-mv,noise,2</code></td></tr>
-    <tr><td>CLIP-mv mean PR-AUC across perturbations 0.57</td><td><code>data/pr-auc-overall.csv</code></td></tr>
-    <tr><td>HOG-fv mean PR-AUC 0.53; PointNet-proxy 0.45</td><td><code>data/pr-auc-overall.csv</code></td></tr>
-    <tr><td>Per-perturbation cell values in Figure 5</td><td><code>data/pr-auc-overall.csv</code></td></tr>
-    <tr><td>CLIP 31 ms / 176 ms, HOG 9.2 ms, PointNet 1.8 ms</td><td><code>data/descriptor-cost.csv</code></td></tr>
-    <tr><td>Embedding dims 512 / 6084 / 19</td><td><code>data/descriptor-cost.csv</code></td></tr>
-    <tr><td>4,200 rows (4,000 clones + 200 sources)</td><td><code>data/clone-manifest.csv</code></td></tr>
-    <tr><td>Top-5 retrievals in Figure 6</td><td><code>data/top5-qualitative.json</code></td></tr>
-  </tbody>
-</table>
+<figure><img src="tables/table4.png" alt="Data table 4" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 4</figcaption></figure>
 </div>
 
 <p>The single most important upstream input is the 200-mesh ModelNet40 sample, deterministic by alphabetical filename order. Re-running with <code>MODELNET40_ROOT=/your/path python code/main.py</code> will rebuild every CSV and every NPY identically; re-running <code>make_visuals.py</code> will rebuild every PNG.</p>

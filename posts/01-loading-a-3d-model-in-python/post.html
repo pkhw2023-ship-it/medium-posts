@@ -182,17 +182,7 @@ def load_canonical(path):
 
 <p>Table 1. Majority "up" axis (defined as the longest bbox axis) across 8 ModelNet40 train samples per class. Columns show vote counts per axis.</p>
 
-<table>
-  <thead><tr><th>Class</th><th>n</th><th>Majority up</th><th>X-up</th><th>Y-up</th><th>Z-up</th></tr></thead>
-  <tbody>
-    <tr><td>airplane</td><td>8</td><td><strong>X</strong></td><td>4</td><td>4</td><td>0</td></tr>
-    <tr><td>bed</td><td>8</td><td><strong>Y</strong></td><td>0</td><td><strong>8</strong></td><td>0</td></tr>
-    <tr><td>bench</td><td>8</td><td><strong>X</strong></td><td>5</td><td>3</td><td>0</td></tr>
-    <tr><td>bookshelf</td><td>8</td><td><strong>Z</strong></td><td>1</td><td>0</td><td><strong>7</strong></td></tr>
-    <tr><td>chair</td><td>8</td><td><strong>Z</strong></td><td>0</td><td>0</td><td><strong>8</strong></td></tr>
-    <tr><td>table</td><td>8</td><td><strong>Y</strong></td><td>3</td><td>5</td><td>0</td></tr>
-  </tbody>
-</table>
+<figure><img src="tables/table1.png" alt="Data table 1" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 1</figcaption></figure>
 
 <p>Source: data/axis-audit.csv (6 rows).</p>
 
@@ -208,20 +198,7 @@ def load_canonical(path):
 
 <p>Table 2. Loader support for common 3D formats out of the box (trimesh 4.11, Open3D 0.19, PyVista 0.47 with meshio installed). "Partial" means the loader either fails on a subset of valid files or requires post-processing to get a usable mesh.</p>
 
-<table>
-  <thead><tr><th>Format</th><th>trimesh</th><th>Open3D</th><th>PyVista</th></tr></thead>
-  <tbody>
-    <tr><td>OFF</td><td><strong>Yes</strong></td><td>Partial</td><td>Partial</td></tr>
-    <tr><td>OBJ</td><td><strong>Yes</strong></td><td><strong>Yes</strong></td><td><strong>Yes</strong></td></tr>
-    <tr><td>PLY</td><td><strong>Yes</strong></td><td><strong>Yes</strong></td><td><strong>Yes</strong></td></tr>
-    <tr><td>STL</td><td><strong>Yes</strong></td><td><strong>Yes</strong></td><td><strong>Yes</strong></td></tr>
-    <tr><td>GLTF</td><td><strong>Yes</strong></td><td><strong>Yes</strong></td><td>Partial</td></tr>
-    <tr><td>GLB</td><td><strong>Yes</strong></td><td><strong>Yes</strong></td><td>Partial</td></tr>
-    <tr><td>FBX</td><td>No</td><td>No</td><td>No</td></tr>
-    <tr><td>3MF</td><td><strong>Yes</strong></td><td>No</td><td>No</td></tr>
-    <tr><td>DAE</td><td><strong>Yes</strong></td><td><strong>Yes</strong></td><td>No</td></tr>
-  </tbody>
-</table>
+<figure><img src="tables/table2.png" alt="Data table 2" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 2</figcaption></figure>
 
 <p>Source: data/format-support.csv (9 rows). Verified by attempting one file per cell on lightsail-shapenet with library versions pinned in code/requirements.txt.</p>
 
@@ -241,18 +218,7 @@ def load_canonical(path):
 
 <p>Table 3. Which loader I reach for, by task.</p>
 
-<table>
-  <thead><tr><th>Task</th><th>Recommended</th><th>Why</th></tr></thead>
-  <tbody>
-    <tr><td>Quick visualization</td><td>PyVista</td><td>One-line off-screen Plotter with sensible camera defaults</td></tr>
-    <tr><td>Headless batch render</td><td>PyVista</td><td>VTK + EGL is reliable on GPU boxes</td></tr>
-    <tr><td>Interactive demo</td><td>PyVista</td><td>Best trackball + ipywidgets bridge</td></tr>
-    <tr><td>Repair and export</td><td><strong>trimesh</strong></td><td>fix_winding / fix_normals / fill_holes round-trip cleanly</td></tr>
-    <tr><td>Mesh analysis</td><td><strong>trimesh</strong></td><td>Curvature, geodesics, sampling, voxelization all built in</td></tr>
-    <tr><td>Point cloud bridge</td><td>Open3D</td><td>read_point_cloud + RANSAC + ICP are the strongest of the three</td></tr>
-    <tr><td>Numpy-only handoff</td><td><strong>trimesh</strong></td><td>Returns NumPy arrays directly with no surprise reordering</td></tr>
-  </tbody>
-</table>
+<figure><img src="tables/table3.png" alt="Data table 3" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 3</figcaption></figure>
 
 <p>Source: data/loader-recommendation.csv (7 rows).</p>
 
@@ -277,17 +243,7 @@ def load_canonical(path):
 <p>- <code>data/loader-recommendation.csv</code> — Table 3.</p>
 <p>- <code>data/axis-audit.csv</code> — Table 1, produced by <code>code/axis_audit.py</code>.</p>
 
-<table>
-  <thead><tr><th>Claim in prose</th><th>Data source</th></tr></thead>
-  <tbody>
-    <tr><td>trimesh 48/48, Open3D 40/48, PyVista 40/48</td><td><code>data/load-time.csv</code> (success column)</td></tr>
-    <tr><td>Median load times 11.4 / 9.9 / 59.8 ms</td><td><code>data/summary.json::load_times_ms</code></td></tr>
-    <tr><td>Vertex range 97 → 94,335</td><td><code>data/summary.json::vertex_min,vertex_max</code></td></tr>
-    <tr><td>BBox diag range 28.8 → 6,822.7</td><td><code>data/summary.json::bbox</code></td></tr>
-    <tr><td>Winding-consistent 35/48 → 48/48</td><td><code>data/repair-coverage.csv</code> (pre_winding, post_winding)</td></tr>
-    <tr><td>chair_0001 V=2382 (trimesh/Open3D/PyVista raw), V=2368 (PyVista after extract_surface)</td><td><code>data/load-time.csv</code> (chair_0001 rows + figure caption discussion)</td></tr>
-  </tbody>
-</table>
+<figure><img src="tables/table4.png" alt="Data table 4" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 4</figcaption></figure>
 
 <p>Versions used: trimesh 4.11.5, Open3D 0.19.0, PyVista 0.47.3, meshio 5.3.5, NumPy 2.x. Conda env <code>3d-dedup</code> on lightsail-shapenet (Tesla T4, Ubuntu 22.04). Dataset: ModelNet40 (Wu et al. 2015, CC BY-NC) at the standard release, sampling the first 8 train OFFs alphabetically from each of <code>airplane</code>, <code>chair</code>, <code>table</code>, <code>bed</code>, <code>bookshelf</code>, <code>bench</code>. Load timings are from a single run on a shared GPU host and vary ~10-20% between runs; treat the medians as order-of-magnitude indicators, not microbenchmarks.</p>
 <script>

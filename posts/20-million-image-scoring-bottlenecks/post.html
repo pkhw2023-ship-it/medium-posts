@@ -141,36 +141,7 @@ def resize_opencv(arr, size):        # bilinear, SIMD
 <h2>Serialization and disk write are basically free</h2>
 <p>Once the model emits a 384-dim float32 vector per image, writing 100K of them is a non-event:</p>
 <p><strong>Table 1. Serialization throughput for 50K 384-dim float32 vectors.</strong></p>
-<div class="table-wrap"><table>
-<thead>
-<tr>
-<th>Format</th>
-<th>Wall clock for 100K vectors (s)</th>
-<th>Throughput (img/s)</th>
-<th>On-disk size (MiB)</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>parquet (chunked, snappy)</td>
-<td>0.97</td>
-<td>51,371</td>
-<td>81.3</td>
-</tr>
-<tr>
-<td>LMDB</td>
-<td>0.52</td>
-<td>95,893</td>
-<td>(sparse)</td>
-</tr>
-<tr>
-<td>.npy append</td>
-<td>0.09</td>
-<td>586,934</td>
-<td>73.2</td>
-</tr>
-</tbody>
-</table></div>
+<div class="table-wrap"><figure><img src="tables/table1.png" alt="Data table 1" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 1</figcaption></figure></div>
 <p>Source: <code>data/serialization-comparison.csv</code> (50K rows × 384 dim each).</p>
 <p>Even the slow option (parquet) runs three orders of magnitude faster than the rest of the pipeline. Pick whichever format your downstream wants — parquet for Spark/DuckDB readers, LMDB for serving-time key-value lookup, npy for the simplest round-trip — and the choice does not move total job time.</p>
 <h2>The CPU/GPU timeline tells the story</h2>
@@ -189,40 +160,7 @@ def resize_opencv(arr, size):        # bilinear, SIMD
 <h2>Combining the wins</h2>
 <p>Order matters. Decode is the constraint, so fix decode first — switching to FP16 before fixing decode just makes the GPU finish faster and wait longer per batch. Right order: decode/resize → workers → batch → FP16. Stack the fixes that way and re-measure on 100K:</p>
 <p><strong>Table 2. End-to-end throughput, baseline vs all-wins-combined vs CPU floor.</strong></p>
-<div class="table-wrap"><table>
-<thead>
-<tr>
-<th>Configuration</th>
-<th>Throughput (img/s)</th>
-<th>Wall clock for 100K (s)</th>
-<th>Extrapolated for 1M (min)</th>
-<th>Speedup over baseline</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>T4 baseline (Pillow + 4 workers + batch 32, FP32, parquet)</td>
-<td>168</td>
-<td>595</td>
-<td>~99</td>
-<td>1.0x</td>
-</tr>
-<tr>
-<td>All wins combined: turbojpeg + 8 workers + batch 64 + FP16 + parquet</td>
-<td><strong>988</strong></td>
-<td><strong>102</strong></td>
-<td><strong>~17</strong></td>
-<td><strong>5.88x</strong></td>
-</tr>
-<tr>
-<td>CPU baseline (single thread, no batching)</td>
-<td>1.3</td>
-<td>—</td>
-<td>(~13,000)</td>
-<td>0.008x</td>
-</tr>
-</tbody>
-</table></div>
+<div class="table-wrap"><figure><img src="tables/table2.png" alt="Data table 2" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 2</figcaption></figure></div>
 <p>Source: <code>data/t4-baseline-stages.csv</code>, <code>data/optimized-end-to-end.csv</code>, <code>data/cpu-baseline-stages.csv</code>. I dropped the per-step intermediate rows that earlier drafts had — their numbers were estimated from the sub-benchmarks rather than measured end-to-end, and that's the kind of half-real number a careful reader rightly distrusts. CPU baseline is for scale: single-threaded CPU scoring extrapolates to ~13,000 minutes — nine days — for a million images, one of the stronger arguments for owning a T4.</p>
 <figure>
   <img src="images/fig-10-throughput-summary.png" alt="Figure 9. Throughput at each cumulative optimization step (intermediate steps shown as estimates from the per-stage sub-benchmarks; only the baseline and the all-combined run on the right are measured end-to-end on 100K). FP16 is the largest single jump; the others are individually smaller but the order matters because the bottleneck shifts as each fix lands." />
@@ -231,82 +169,7 @@ def resize_opencv(arr, size):        # bilinear, SIMD
 <p>The extrapolation to one million images deserves an asterisk. We measured 100,000. Linear extrapolation assumes (a) no per-job overhead amortization (true here — model load is ~1 second), (b) constant per-image cost (probably wrong by a few percent because OS page-cache state changes during a 10x larger run), (c) no thermal throttling on the T4 (a real risk during a 17-minute peak-load run). A real million-image job would probably finish in 18-22 minutes, not the clean 17 the extrapolation gives.</p>
 <h2>A bottleneck checklist</h2>
 <p><strong>Table 3. Stage-by-stage bottleneck checklist, with typical shares and fixes.</strong></p>
-<div class="table-wrap"><table>
-<thead>
-<tr>
-<th>Stage</th>
-<th>Typical share of wall (full-res images)</th>
-<th>When it becomes the bottleneck</th>
-<th>Fix</th>
-<th>Cost of fix</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>read</td>
-<td>&lt;1%</td>
-<td>network-mounted storage; cold page cache on first epoch</td>
-<td>local SSD; warm cache</td>
-<td>infrastructure change</td>
-</tr>
-<tr>
-<td>decode</td>
-<td>30-50%</td>
-<td>medium-to-large JPEGs (&gt;50 KB); high-resolution PNGs</td>
-<td>libjpeg-turbo or OpenCV</td>
-<td>2 lines of code; install one system package</td>
-</tr>
-<tr>
-<td>resize</td>
-<td>20-40%</td>
-<td>source images much larger than encoder input</td>
-<td>OpenCV <code>cv2.resize</code> instead of <code>PIL.Image.resize</code></td>
-<td>2 lines of code</td>
-</tr>
-<tr>
-<td>normalize</td>
-<td>3-8%</td>
-<td>rarely the bottleneck; only matters per-image at small image sizes</td>
-<td>move into GPU as a torchvision transform</td>
-<td>refactor preprocess pipeline</td>
-</tr>
-<tr>
-<td>batch assemble</td>
-<td>&lt;1%</td>
-<td>rarely matters until you're at batch&gt;256 and many workers</td>
-<td>use <code>torch.stack</code> instead of <code>np.stack</code> + <code>from_numpy</code></td>
-<td>one-line refactor</td>
-</tr>
-<tr>
-<td>H2D copy</td>
-<td>1-3%</td>
-<td>very large batches or large per-image tensors</td>
-<td><code>pin_memory=True</code> + <code>non_blocking=True</code></td>
-<td>already in the recipe</td>
-</tr>
-<tr>
-<td>forward</td>
-<td>8-90% depending on everything above</td>
-<td>once CPU keeps GPU fed</td>
-<td>FP16 (<code>model.half()</code>); larger model = bigger ROI on TensorRT</td>
-<td>1 line for FP16; build pipeline for TRT</td>
-</tr>
-<tr>
-<td>D2H copy</td>
-<td>&lt;1%</td>
-<td>only if you bring per-image attention maps back</td>
-<td>keep only the pooled vector on the host</td>
-<td>architecture choice</td>
-</tr>
-<tr>
-<td>serialize+write</td>
-<td>&lt;1%</td>
-<td>almost never</td>
-<td>parquet is fine; pick npy if you want max speed</td>
-<td>format choice</td>
-</tr>
-</tbody>
-</table></div>
+<div class="table-wrap"><figure><img src="tables/table3.png" alt="Data table 3" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 3</figcaption></figure></div>
 <p>Source: synthesized from <code>data/t4-serial-stages-original.csv</code>, <code>data/decoder-comparison.csv</code>, <code>data/onnx-vs-pytorch.csv</code>, and <code>data/optimized-end-to-end.csv</code>.</p>
 <p>The checklist is the takeaway. Most "my GPU job is slow" debugging starts at batch size and works inward; this one starts at the JPEG decoder and works outward. On a million-image job the order changes the answer by a factor of five.</p>
 <h2>What the series leaves you with</h2>
@@ -319,77 +182,7 @@ def resize_opencv(arr, size):        # bilinear, SIMD
 <p>Three open threads from the arc that I'd find worth a follow-up: (1) the full Novotni 2003 Zernike implementation that Post 07 declined to write, (2) a calibrated conformal prediction layer on top of the DINOv2 retrieval scores from Post 11, and (3) a cross-encoder reranker on the top-K candidates from the FAISS index, which would push retrieval@5 past 0.85 on the ModelNet40 subset. The data, the code, and the throughput budget are in your hands now.</p>
 <h2>Reproducibility</h2>
 <p><strong>Table 4. Reproducibility map — every cited number, the CSV that backs it, and the row.</strong></p>
-<div class="table-wrap"><table>
-<thead>
-<tr>
-<th>Number cited</th>
-<th>Source file</th>
-<th>Row(s)</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>168 img/s, 595 s for 100K, T4 baseline</td>
-<td><code>data/t4-baseline-stages.csv</code></td>
-<td>row 1</td>
-</tr>
-<tr>
-<td>988 img/s, 102 s for 100K, optimized</td>
-<td><code>data/optimized-end-to-end.csv</code></td>
-<td>row 1</td>
-</tr>
-<tr>
-<td>5.88x speedup</td>
-<td>computed from the two rows above</td>
-<td>—</td>
-</tr>
-<tr>
-<td>Per-stage % for PIL serial on full-res images</td>
-<td><code>data/t4-serial-stages-original.csv</code></td>
-<td>row 1</td>
-</tr>
-<tr>
-<td>Decode 51%, resize 38%, forward 8%</td>
-<td>computed from <code>t4-serial-stages-original.csv</code> row 1</td>
-<td>—</td>
-</tr>
-<tr>
-<td>Decoder per-image: PIL 24.8 ms, OpenCV 13.5 ms, turbojpeg 10.2 ms (original)</td>
-<td><code>data/decoder-comparison.csv</code></td>
-<td>rows with <code>image_set=original</code></td>
-</tr>
-<tr>
-<td>Decoder per-image: PIL 0.46 ms, OpenCV 0.25 ms, turbojpeg 0.23 ms (256x256)</td>
-<td><code>data/decoder-comparison.csv</code></td>
-<td>rows with <code>image_set=small_256</code></td>
-</tr>
-<tr>
-<td>Batch sweep throughputs</td>
-<td><code>data/batch-sweep.csv</code></td>
-<td>all rows</td>
-</tr>
-<tr>
-<td>Workers sweep throughputs</td>
-<td><code>data/workers-sweep.csv</code></td>
-<td>all rows</td>
-</tr>
-<tr>
-<td>PyTorch FP32 264 / FP16 1006 / ONNX FP16 432 img/s</td>
-<td><code>data/onnx-vs-pytorch.csv</code></td>
-<td>all rows</td>
-</tr>
-<tr>
-<td>Serialization throughputs</td>
-<td><code>data/serialization-comparison.csv</code></td>
-<td>all rows</td>
-</tr>
-<tr>
-<td>CPU baseline forward share</td>
-<td><code>data/cpu-baseline-stages.csv</code></td>
-<td>row 1 (forward = 99.5% of wall)</td>
-</tr>
-</tbody>
-</table></div>
+<div class="table-wrap"><figure><img src="tables/table4.png" alt="Data table 4" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 4</figcaption></figure></div>
 <p>Hardware: lightsail-shapenet (16-core Intel x86 + Tesla T4 16 GB), conda env <code>3d-dedup</code>, torch 2.11.0 + CUDA 12.6, transformers 5.6.1, opencv-python-headless 4.13.0, PyTurboJPEG 1.x with libturbojpeg 2.1.2, onnxruntime-gpu 1.23.2.</p>
 <p>Data: 100,000 images sampled from Amazon Berkeley Objects (CC-BY-4.0; <code>s3://amazon-berkeley-objects/images/small/</code> and <code>images/original/</code>, downloaded via <code>aws s3 cp --no-sign-request</code>). 70 shards of the 256 hex prefixes for the small set; 50 shards for the original-resolution set.</p>
 <p>Run commands:</p>

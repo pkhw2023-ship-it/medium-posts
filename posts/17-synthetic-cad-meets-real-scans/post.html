@@ -83,56 +83,7 @@ for cls, path, mesh in iter_modelnet40(split=&quot;train&quot;,
 <figure><img src="images/fig-04-evaluation-pipeline-mermaid.png" alt="Figure 2. The four-variant evaluation pipeline. One CAD-trained checkpoint, four parallel ScanObjectNN test sets, one per-class accuracy delta per branch."><figcaption>Figure 2. The four-variant evaluation pipeline. One CAD-trained checkpoint, four parallel ScanObjectNN test sets, one per-class accuracy delta per branch.</figcaption></figure>
 <p>Same CAD-trained model, four ScanObjectNN test sets. The accuracies are in Table 1.</p>
 <p>Table 1. Top-1 accuracy of the CAD-trained PointNet on ModelNet40 test (clean) and the four ScanObjectNN variants. Mean per-class is the unweighted average across the 8 classes; best/worst are per-class extrema. The model has never been told a real scan exists.</p>
-<div class="table-wrap"><table>
-<tr>
-<th>Variant</th>
-<th class="num">n</th>
-<th class="num">Overall acc</th>
-<th class="num">Mean per-class</th>
-<th>Best class</th>
-<th>Worst class</th>
-</tr>
-<tr>
-<td>ModelNet40 test (CAD)</td>
-<td class="num">786</td>
-<td class="num"><strong>0.959</strong></td>
-<td class="num">0.958</td>
-<td>bookshelf (1.00)</td>
-<td>table (0.80)</td>
-</tr>
-<tr>
-<td>ScanObjectNN OBJ_ONLY</td>
-<td class="num">334</td>
-<td class="num">0.144</td>
-<td class="num">0.124</td>
-<td>monitor (0.26)</td>
-<td>bed (0.00)</td>
-</tr>
-<tr>
-<td>ScanObjectNN OBJ_BG</td>
-<td class="num">334</td>
-<td class="num">0.105</td>
-<td class="num">0.094</td>
-<td>monitor (0.26)</td>
-<td>bed/sofa/toilet/table (0.00)</td>
-</tr>
-<tr>
-<td>ScanObjectNN T25</td>
-<td class="num">1,663</td>
-<td class="num">0.099</td>
-<td class="num">0.088</td>
-<td>bookshelf (0.27)</td>
-<td>bed/sofa/table (0.00)</td>
-</tr>
-<tr>
-<td>ScanObjectNN T50_RS</td>
-<td class="num">1,660</td>
-<td class="num">0.103</td>
-<td class="num">0.094</td>
-<td>bookshelf (0.27)</td>
-<td>bed/sofa (0.00)</td>
-</tr>
-</table></div>
+<div class="table-wrap"><figure><img src="tables/table1.png" alt="Data table 1" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 1</figcaption></figure></div>
 <p class="caption-src">Source: data/scan-eval-by-variant.csv (5 rows).</p>
 <p>The drop from 0.96 on CAD to 0.14 on OBJ_ONLY is 82 points — the largest single step in the table and the one that surprised me. OBJ_ONLY is the closest variant to a CAD model: no background, no perturbed box, just the object with depth-sensor noise and front-facing occlusion. Eighty-two points gone, and the only changes are "the orientation is whatever the scanner caught" and "the points are noisier than uniform surface sampling." OBJ_BG drops another 4 points from adding background. T25 and T50_RS are barely worse — once you have background and a CAD-trained model, additional jitter doesn't matter because the model is at the chance floor.</p>
 <p>The per-class story is louder. Figure 3 sorts the classes by CAD accuracy on the left bar and lines up the OBJ_BG accuracy next to it.</p>
@@ -181,71 +132,7 @@ x = apply_rotations_torch(x, R)</code></pre>
 <p>The honest read is that the controlled-ablation story and the wild-data story disagree about which factor matters most. On a clean CAD test set, removing background costs the most accuracy per unit of perturbation. On a real ScanObjectNN object, training-time rotation augmentation buys back the most accuracy per unit of training cost. Both stories are true; they live in different metric spaces. The practical recipe is: do both.</p>
 <p>Table 2 brings the per-class details together for the recommendation row.</p>
 <p>Table 2. Per-class top-1 accuracy on ScanObjectNN OBJ_BG for the CAD baseline and the rotation+background-augmented model. Delta is the synthetic-augmentation gain; dominant-failure is the proximate cause from the T50_RS failure taxonomy. Bold row: cleanest win — chair gains 67 points from one extra training run.</p>
-<div class="table-wrap"><table>
-<tr>
-<th>Class</th>
-<th class="num">Baseline acc</th>
-<th class="num">+ rot + bg acc</th>
-<th class="num">Delta</th>
-<th>Dominant residual failure</th>
-</tr>
-<tr>
-<td>bed</td>
-<td class="num">0.00</td>
-<td class="num">0.23</td>
-<td class="num">+0.23</td>
-<td>bookshelf-confusion</td>
-</tr>
-<tr>
-<td>bookshelf</td>
-<td class="num">0.20</td>
-<td class="num">0.65</td>
-<td class="num">+0.45</td>
-<td>desk-confusion</td>
-</tr>
-<tr>
-<td><strong>chair</strong></td>
-<td class="num"><strong>0.10</strong></td>
-<td class="num"><strong>0.77</strong></td>
-<td class="num"><strong>+0.67</strong></td>
-<td><strong>bg residual</strong></td>
-</tr>
-<tr>
-<td>desk</td>
-<td class="num">0.20</td>
-<td class="num">0.23</td>
-<td class="num">+0.03</td>
-<td>table-confusion</td>
-</tr>
-<tr>
-<td>monitor</td>
-<td class="num">0.26</td>
-<td class="num">0.21</td>
-<td class="num">-0.05</td>
-<td>display-noise (regression)</td>
-</tr>
-<tr>
-<td>sofa</td>
-<td class="num">0.00</td>
-<td class="num">0.19</td>
-<td class="num">+0.19</td>
-<td>bookshelf-confusion</td>
-</tr>
-<tr>
-<td>table</td>
-<td class="num">0.00</td>
-<td class="num">0.57</td>
-<td class="num">+0.57</td>
-<td>desk-confusion</td>
-</tr>
-<tr>
-<td>toilet</td>
-<td class="num">0.00</td>
-<td class="num">0.06</td>
-<td class="num">+0.06</td>
-<td>bowl-shape ambiguity</td>
-</tr>
-</table></div>
+<div class="table-wrap"><figure><img src="tables/table2.png" alt="Data table 2" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 2</figcaption></figure></div>
 <p class="caption-src">Source: data/scan-eval-bg-aug.csv (18 rows) + data/per-class-by-variant.csv (45 rows), aggregated.</p>
 <p>Chair is the cleanest win — the CAD network had the shape and just needed to see chairs in arbitrary orientations and surrounded by clutter. Monitor regressed slightly (-0.05); the bg augmentation hurt the one class whose CAD-trained signal was already strong on OBJ_BG, because the augmentation distribution put background points right where the monitor screen normally sits in the cloud. That's a tunable failure mode — a per-class augmentation schedule that backs off on classes already at acceptable accuracy would catch it. The classes whose residual failure is bookshelf- or desk-confusion are the cases where the geometric primitive ambiguity from Figure 4 persists even with the augmentation.</p>
 <h2>Limitations</h2>
@@ -256,44 +143,7 @@ x = apply_rotations_torch(x, R)</code></pre>
 <p>The CAD-to-scan gap on the 8-class intersection is 85 points of top-1 (0.96 → 0.10 on OBJ_BG). On clean ModelNet40 inputs, background is the most expensive perturbation per unit of magnitude — 100 random clutter points out of 1024 drops accuracy from 0.96 to 0.18. In the wild, rotation augmentation is the most valuable training-time fix per unit of cost — K=32 SO(3) rotation pool buys back 33 of those 85 OBJ_BG points. Background augmentation on top adds another 3. The full synthetic-only recipe recovers 35 of 85 OBJ_BG points and 20 of 86 T50_RS points without a single real scan — about 50 points of real-world correlated-perturbation headroom left for actual scan data.</p>
 <p>Post 18 takes the worst-case classifier — the rotation-naive K=1 PointNet from Post 10 — and wraps it in conformal prediction so the failure mode you just saw on rotated CAD-trained inputs becomes a measurable coverage gap rather than a silent argmax.</p>
 <h2>Reproducibility</h2>
-<div class="table-wrap"><table>
-<tr>
-<th>Claim in prose</th>
-<th>Source file</th>
-</tr>
-<tr>
-<td>CAD baseline = 0.959 MN40 top-1; OBJ_BG = 0.105; OBJ_ONLY = 0.144</td>
-<td>data/scan-eval-by-variant.csv</td>
-</tr>
-<tr>
-<td>Bookshelf survives best on OBJ_BG (0.20); chair (0.10); monitor (0.26)</td>
-<td>data/per-class-by-variant.csv</td>
-</tr>
-<tr>
-<td>Noise σ=0.08 → 0.87 acc</td>
-<td>data/ablation-noise.csv</td>
-</tr>
-<tr>
-<td>Occlusion 0.5 → 0.64 acc; 0.9 → 0.27 acc</td>
-<td>data/ablation-occlusion.csv</td>
-</tr>
-<tr>
-<td>Background n=100 → 0.18 acc; saturates at 0.13</td>
-<td>data/ablation-background.csv</td>
-</tr>
-<tr>
-<td>82% of errors background-attributed</td>
-<td>data/failure-taxonomy.csv</td>
-</tr>
-<tr>
-<td>rot32_only OBJ_BG = 0.43; rot32_plus_bg OBJ_BG = 0.46</td>
-<td>data/scan-eval-bg-aug.csv</td>
-</tr>
-<tr>
-<td>+35 point recovery of 85-point OBJ_BG gap</td>
-<td>(0.458 − 0.105) × 100</td>
-</tr>
-</table></div>
+<div class="table-wrap"><figure><img src="tables/table3.png" alt="Data table 3" style="max-width:100%;height:auto;display:block;margin:0 auto;border:1px solid #eee;"><figcaption style="text-align:center;color:#666;font-size:14px;margin-top:0.4em;">Table 3</figcaption></figure></div>
 <p><strong>Hardware:</strong> <code>lightsail-shapenet</code> (Tesla T4, 16 GB, CUDA 12.6), conda env <code>3d-dedup</code>, 16-vCPU. Each 200-epoch PointNet train: ~13 min baseline, ~15 min with augmentation. Full pipeline: ~50 min wall-clock on a single T4.</p>
 <p><strong>Pinned versions:</strong> torch 2.11.0+cu126, numpy 2.2.6, scipy 1.15.3, trimesh 4.11.5, h5py 3.13.0, scikit-learn 1.7.2.</p>
 <p><strong>Datasets:</strong> ModelNet40 (Wu et al. 2015, CC BY-NC). ScanObjectNN (Uy et al. 2019) — h5 release from <code>https://hkust-vgd.ust.hk/scanobjectnn/h5_files.zip</code>; see https://hkust-vgd.ust.hk/scanobjectnn/ for the exact terms, the version downloaded for this post was the HKUST h5_files.zip release. main_split for OBJ_BG/T25/T50_RS, main_split_nobg for OBJ_ONLY. 8-class intersection: bed, bookshelf↔shelf, chair, desk, monitor↔display, sofa, table, toilet.</p>
