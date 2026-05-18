@@ -1,0 +1,18 @@
+flowchart LR
+  A[Trained classifier<br/>frozen weights] --> B
+  B[Calibration set<br/>n examples, labels y] --> C
+  C[Compute scores<br/>s_i = 1 - p_y_i] --> D
+  D["Quantile q̂ at level<br/>⌈(n+1)(1-α)⌉/n"] --> E
+  F[New input x_new] --> G
+  G[Probs p_new] --> H
+  H{For each class c} --> I
+  E --> I
+  I[Include c if<br/>1 - p_new_c ≤ q̂] --> J
+  J[Prediction set<br/>+ 1-α coverage guarantee]
+
+  classDef green fill:#66c2a5,stroke:#3a4750,color:#222;
+  classDef blue fill:#8da0cb,stroke:#3a4750,color:#fff;
+  classDef gray fill:#e5e5e5,stroke:#3a4750,color:#222;
+  class A,B,C,D green;
+  class F,G,H,I gray;
+  class J blue;

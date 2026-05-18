@@ -1,0 +1,15 @@
+flowchart LR
+    A[test object<br/>1024 points] --> B[augment 50&times;<br/>SO(3) + jitter + dropout]
+    B --> C[forward through<br/>frozen PointNet]
+    C --> D[50 softmax vectors<br/>(predictive distribution)]
+    D --> E[percentile interval<br/>(cheap)]
+    D --> F[bootstrap interval<br/>(200 resamples)]
+    G[5 PointNet checkpoints<br/>different seeds] --> H[5 softmax vectors<br/>(ensemble)]
+    H --> I[ensemble interval]
+    J[calibration set<br/>residuals] --> K[split conformal<br/>(coverage guarantee)]
+    style A fill:#e5c494,stroke:#3a4750
+    style D fill:#a6d854,stroke:#3a4750
+    style E fill:#66c2a5,stroke:#3a4750
+    style F fill:#fc8d62,stroke:#3a4750
+    style I fill:#8da0cb,stroke:#3a4750
+    style K fill:#e78ac3,stroke:#3a4750

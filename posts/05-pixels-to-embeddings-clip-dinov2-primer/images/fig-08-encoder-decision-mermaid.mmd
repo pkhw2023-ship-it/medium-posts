@@ -1,0 +1,9 @@
+%%{init: {'theme': 'neutral'}}%%
+flowchart TD
+    Start[need a 3D embedding] --> Q1{need text alignment?}
+    Q1 -- yes --> CLIP[CLIP ViT-B/32]
+    Q1 -- no --> Q2{want best shape recall?}
+    Q2 -- yes --> DINO[DINOv2 ViT-B/14]
+    Q2 -- no --> Q3{need lowest latency?}
+    Q3 -- yes --> CLIP
+    Q3 -- no --> DINO

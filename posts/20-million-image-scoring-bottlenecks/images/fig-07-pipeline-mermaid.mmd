@@ -1,0 +1,19 @@
+flowchart LR
+    A[disk read<br/>0.2%]
+    B[decode JPEG<br/>51.3%]
+    C[resize to 224<br/>38.3%]
+    D[normalize<br/>1.7%]
+    E[batch assemble<br/>0.0%]
+    F[H2D copy<br/>0.5%]
+    G[GPU forward<br/>7.7%]
+    H[D2H copy<br/>0.0%]
+    I[serialize + write<br/>0.0%]
+
+    A --> B --> C --> D --> E --> F --> G --> H --> I
+
+    classDef bottleneck fill:#fc8d62,stroke:#9c4221,color:#1f2937
+    classDef gpu fill:#66c2a5,stroke:#0f766e,color:#1f2937
+    classDef io fill:#a6d854,stroke:#3f6212,color:#1f2937
+    class B,C bottleneck
+    class G gpu
+    class A,I io

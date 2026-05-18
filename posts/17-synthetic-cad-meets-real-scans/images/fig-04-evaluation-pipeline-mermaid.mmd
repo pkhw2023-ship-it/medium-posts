@@ -1,0 +1,12 @@
+%%{init: {'theme': 'neutral'}}%%
+flowchart LR
+    MN[ModelNet40 CAD 8 classes] --> Train[PointNet train 200 epochs canonical orientation]
+    Train --> CKP[checkpoint]
+    CKP --> EOO[eval OBJ_ONLY]
+    CKP --> EOB[eval OBJ_BG]
+    CKP --> ET25[eval T25]
+    CKP --> ET50[eval T50_RS]
+    EOO --> PC[per-class accuracy delta]
+    EOB --> PC
+    ET25 --> PC
+    ET50 --> PC

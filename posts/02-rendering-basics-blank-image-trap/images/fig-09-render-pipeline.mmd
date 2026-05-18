@@ -1,0 +1,10 @@
+%%{init: {'theme': 'neutral'}}%%
+flowchart LR
+    A[load mesh] --> B[centroid_center]
+    B --> C[normalize_unit_sphere]
+    C --> D[place cameras on sphere]
+    D --> E[set look_at = origin]
+    E --> F[render]
+    F --> G[validate_renders]
+    G -->|all_pass| H[feed to encoder]
+    G -->|n_blank > 0| I[fix camera / lighting]

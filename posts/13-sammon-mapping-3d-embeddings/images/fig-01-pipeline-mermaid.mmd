@@ -1,0 +1,13 @@
+%%{init: {'theme': 'neutral'}}%%
+flowchart LR
+    Mesh[ModelNet40 meshes] --> Render[8-view ring render]
+    Render --> DINO[DINOv2 ViT-B/14]
+    DINO --> Vec[500 x 768 vectors]
+    Vec --> PCA[PCA]
+    Vec --> TSNE[t-SNE]
+    Vec --> UMAP[UMAP]
+    Vec --> SAM[Sammon]
+    PCA --> Eval[trustworthiness + continuity]
+    TSNE --> Eval
+    UMAP --> Eval
+    SAM --> Eval

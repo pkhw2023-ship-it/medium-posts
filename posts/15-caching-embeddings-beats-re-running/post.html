@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stop Re-Embedding the Same Images</title>
+<style>
+:root {
+  --fg: #1f2328;
+  --muted: #57606a;
+  --accent: #3a4750;
+  --code-bg: #f6f8fa;
+  --code-fg: #1f2328;
+  --inline-code-bg: #f0f0f0;
+  --zebra: #fafafa;
+  --rule: #d0d7de;
+  --red: #d62728;
+}
+html { -webkit-text-size-adjust: 100%; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: var(--fg); background: #ffffff; line-height: 1.6; font-size: 18px;
+  max-width: 720px; margin: 2em auto; padding: 0 18px;
+}
+h1 { font-size: 32px; line-height: 1.2; margin-top: 0.4em; margin-bottom: 0.6em; }
+h2 { font-size: 26px; margin-top: 2em; margin-bottom: 0.6em; line-height: 1.25; }
+h3 { font-size: 20px; margin-top: 1.5em; margin-bottom: 0.5em; line-height: 1.3; }
+p { margin: 1em 0; }
+figure { margin: 1.6em 0; padding: 0; }
+figure img, .mermaid-fig img { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+figcaption { font-size: 15px; color: var(--muted); margin-top: 0.6em; line-height: 1.45; }
+pre {
+  background: var(--code-bg); color: var(--code-fg); padding: 12px 14px; overflow-x: auto;
+  border-radius: 6px; font-size: 14px; line-height: 1.5; margin: 1em 0;
+}
+code { font-family: "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size: 0.92em; }
+p code, li code, td code, th code { background: var(--inline-code-bg); padding: 1px 4px; border-radius: 3px; }
+pre code { background: transparent; padding: 0; }
+.table-wrap { overflow-x: auto; margin: 1.2em 0; }
+table { border-collapse: collapse; width: 100%; font-size: 15px; }
+th, td { padding: 8px 10px; border-bottom: 1px solid var(--rule); text-align: left; }
+th { font-weight: 600; color: var(--accent); }
+tr:nth-child(even) { background: var(--zebra); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.caption-top { font-size: 15px; color: var(--muted); margin: 1.2em 0 0.4em; line-height: 1.45; }
+.caption-src { font-size: 13px; color: var(--muted); margin-top: 0.4em; font-style: italic; }
+.mermaid-fig { margin: 1.6em 0; }
+pre.mermaid { background: transparent; padding: 0; overflow: visible; text-align: center; }
+hr { border: none; border-top: 1px solid var(--rule); margin: 2.5em 0; }
+</style>
+</head>
+<body>
+
+<h1>Stop Re-Embedding the Same Images</h1>
+
+<p>A pipeline I inherited re-embedded 800 unchanged images every cycle, 30 cycles a month, on a Tesla T4. The cache key was the file path. Two-thirds of those files arrived through a deduper that renamed them on every push, so the cache was almost never hit. The other third had identical paths but occasional in-place edits, so when those files did hit, the cache served a stale vector and nobody noticed. Two failure modes from one wrong key.</p>
+
+<p>I rewrote the whole cache as forty lines of Python and a DuckDB table. On the second re-run cycle, GPU encode time dropped from 4.3 seconds per cycle to 2.3 seconds. Over thirty cycles the total GPU work fell from 127.8 seconds to 29.3 seconds — a 77% reduction. Then a colleague pointed out we could use a perceptual hash, would hit 100% on the same workload, and finish each cycle in under two seconds. They were right about all three things. They were also wrong, because the pHash cache silently returned the wrong vector for any image that had been re-encoded between cycles. The post is about why both of those statements are true.</p>
+
+<h2>The cache is forty lines of Python</h2>
+
+<pre><code class="language-python">SCHEMA = &quot;&quot;&quot;
+CREATE TABLE IF NOT EXISTS embeddings (
+    model_version   VARCHAR NOT NULL,
+    preproc_version VARCHAR NOT NULL,
+    content_hash    VARCHAR NOT NULL,
+    dim             INTEGER NOT NULL,
+    vec             BLOB    NOT NULL,
+    created_ts      DOUBLE  NOT NULL,
+    PRIMARY KEY (model_version, preproc_version, content_hash)
+)
+&quot;&quot;&quot;
+
+class EmbeddingCache:
+    def __init__(self, db_path, model_version, preproc_version, hash_fn=sha256_bytes):
+        self.con = duckdb.connect(db_path)
+        self.con.execute(SCHEMA)
+        self.model_version = model_version
+        self.preproc_version = preproc_version
+        self.hash_fn = hash_fn
+
+    def get_or_compute(self, image_bytes, compute_fn):
+        h = self.hash_fn(image_bytes)
+        row = self.con.execute(
+            &quot;SELECT dim, vec FROM embeddings WHERE &quot;
+            &quot;model_version=? AND preproc_version=? AND content_hash=?&quot;,
+            [self.model_version, self.preproc_version, h]).fetchone()
+        if row is not None:
+            dim, blob = row
+            return np.frombuffer(blob, dtype=np.float32).reshape(dim)
+        vec = compute_fn(image_bytes)
+        self.con.execute(
+            &quot;INSERT OR REPLACE INTO embeddings VALUES (?, ?, ?, ?, ?, ?)&quot;,
+            [self.model_version, self.preproc_version, h, int(vec.shape[0]),
+             vec.astype(np.float32).tobytes(), time.time()])
+        return vec</code></pre>
+
+<p>That's the whole library. Three lines of schema, one PRIMARY KEY, one lookup, one insert. DuckDB does the rest: the BLOB column stores the float32 vector as raw bytes; the index over (model_version, preproc_version, content_hash) gives O(log n) lookups (the corpus here is a 1.6K-row table; the same schema scales to 50K-row tables and beyond). The PRIMARY KEY constraint is doing real work — it's what enforces the contract that two rows with the same three keys must store the same vector.</p>
+
+<p>The cache key has three fields and they all matter. Drop any one and you get a different category of silent corruption.</p>
+
+<figure>
+  <img src="images/fig-01-key-schema-diagram.png" alt="Figure 1. The three-part cache key, and the failure mode that follows from dropping each component. model_version pins which encoder produced the vector. preproc_version pins the resize and crop pipel">
+  <figcaption>Figure 1. The three-part cache key, and the failure mode that follows from dropping each component. model_version pins which encoder produced the vector. preproc_version pins the resize and crop pipeline. content_hash pins the image bytes. Together they make a row addressable; alone, any pair is a footgun.</figcaption>
+</figure>
+
+<h2>What each key field protects against</h2>
+
+<p><code>model_version</code> is a string like <code>facebook/dinov2-small</code>. The day someone upgrades to <code>dinov2-base</code>, every existing vector becomes wrong — different model, different embedding space, even different dimensionality. Without the version in the key, retrieval silently mixes B-vectors with stale S-vectors and similarity scores drift in ways no debugger will catch. With the key in place, the upgrade reads as a 100% cache miss; the encoder refills naturally. Confirmed on a 64-image audit: switching <code>model_version</code> from <code>dinov2-small</code> to <code>dinov2-base</code> produced 64 misses out of 64. Source: <code>data/invalidation-audit.csv</code> row 1.</p>
+
+<p><code>preproc_version</code> is a string like <code>resize224-imnet</code>. The same image fed through a 336-pixel resize lands at a different center crop and a different normalization slice — the encoder sees different pixels and emits a different vector. Preprocessing changes are the most common silent-corruption source I've seen in real pipelines, because people don't think of them as model changes. Same audit: switching to <code>resize336-imnet</code> produced 64 misses out of 64. Source: row 2.</p>
+
+<p><code>content_hash</code> is the sha256 of the file bytes — the field that does per-image discrimination. A re-upload with one byte flipped gets a new hash, misses, and re-embeds. A same-path file with new contents — the production case that bit me originally — also misses. Path-based caches are wrong on every workflow that includes uploads, edits, or renames. Source: row 3.</p>
+
+<p>There is a fourth failure mode the three-part key doesn't catch: tampering with the stored <code>vec</code> column directly. The schema has no checksum on the BLOB. I tested it by overwriting one row's vector with zeros; the cache happily returns the zero vector on the next lookup. A row-level CRC of the BLOB would close it; in practice the failure hasn't come up in production, so I haven't paid the schema cost. Yet.</p>
+
+<h2>What the cache costs and what it saves</h2>
+
+<p>The first time you embed N images with the cache in front of the encoder, you pay the encoder time plus hashing every image plus N row inserts. That overhead is real. On 800 ModelNet40 view renders at 224×224 on a T4, the dedicated cold-pass measurement runs 9.47 seconds wall time — versus 4.22 seconds for the same workload with no cache at all. Stop there and you would conclude caches were a waste: 124% overhead on the first cycle.</p>
+
+<p>The second time through the same 800 images, the cache run finishes in 0.49 seconds wall time: 0.08s of SHA, 0.41s of DuckDB lookups (≈511 µs per lookup at p50), zero GPU time. Speedup over the cold pass is 19.18×. The cache wins on the GPU bill by the end of the second cycle, and on wall-clock time by the end of the fourth. Both measured against the no-cache baseline. Source: <code>data/run-sha-cache.csv</code>, <code>data/churn-simulation.csv</code>.</p>
+
+<figure>
+  <img src="images/fig-02-stacked-runtime.png" alt="Figure 2. Steady-state wall time per re-run cycle, broken into GPU embed time (orange) and hash plus lookup time (blue). The no-cache bar is almost all GPU. The SHA256 bar has 80% of the GPU work remo">
+  <figcaption>Figure 2. Steady-state wall time per re-run cycle, broken into GPU embed time (orange) and hash plus lookup time (blue). The no-cache bar is almost all GPU. The SHA256 bar has 80% of the GPU work removed (the warm part) plus a small slice of hash plus lookup. The pHash bar has all of the GPU work removed but is silently wrong on the 20% of images that got new bytes.</figcaption>
+</figure>
+
+<p>That figure is one steady-state cycle. The 30-cycle view is where the cache earns its place in the pipeline.</p>
+
+<h2>The 30-day churn simulation</h2>
+
+<p>I simulated thirty re-run cycles of an 800-image batch with 20% churn per cycle. "Churn" means 20% of the images each cycle are new bytes the cache has never seen — same source object, freshly re-encoded as a new PNG, so the SHA changes but the visual content barely does. That's the production case where a thumbnail generator re-saves on every run, a CMS resaves on every edit, or an upstream pipeline switches PNG compression levels. The other 80% are byte-identical to the previous cycle. Three strategies side by side: <code>none</code>, <code>sha</code>, <code>phash</code>.</p>
+
+<figure>
+  <img src="images/fig-03-cost-curve.png" alt="Figure 3. Cumulative GPU encode time across 30 re-run cycles. No-cache grows linearly at the per-cycle compute cost. SHA256 grows at 20% of that rate after the day-zero amortization. pHash flatlines a">
+  <figcaption>Figure 3. Cumulative GPU encode time across 30 re-run cycles. No-cache grows linearly at the per-cycle compute cost. SHA256 grows at 20% of that rate after the day-zero amortization. pHash flatlines after day zero because every perturbed image collides with its base on perceptual hash — looks great in this chart, hides a correctness disaster.</figcaption>
+</figure>
+
+<p>The no-cache line is the baseline — 4.3 seconds of GPU work per cycle, 127.8 seconds total over the month. The SHA line shows the day-zero overhead clearly: cycle 0 is 8.99 seconds, more than the no-cache baseline, because every image is a miss. Cycle 1 drops to 2.32 seconds — 640 hits, 160 misses. From cycle 1 onward the SHA cache holds an 80% hit rate every cycle, exactly matching the churn rate. Total GPU compute over the 30 cycles is 29.27 seconds. SHA cuts the encoder bill by 77%.</p>
+
+<p>The pHash line is the interesting one. It also has a 4.3-second day-zero, but from cycle 1 onward sits at 1.87 seconds with a reported 100% hit rate. Cumulative GPU compute stays at 4.26 seconds for the entire 30-day window. On paper, pHash beats SHA by an additional 25 GPU-seconds. That's the case my colleague made and it is mathematically correct. It is also incorrect about whether the returned vectors are right.</p>
+
+<figure>
+  <img src="images/fig-04-cache-hit-curve.png" alt="Figure 4. Cache hit rate per cycle for SHA and pHash. SHA holds 80% from cycle 1, exactly the rate the workload&#x27;s 20% churn rate predicts. pHash reports 100% from cycle 1 onward, which is the desirabl">
+  <figcaption>Figure 4. Cache hit rate per cycle for SHA and pHash. SHA holds 80% from cycle 1, exactly the rate the workload's 20% churn rate predicts. pHash reports 100% from cycle 1 onward, which is the desirable outcome only if every perceptual-hash hit corresponds to genuinely equivalent content. The next section is about when it doesn't.</figcaption>
+</figure>
+
+<h2>The pHash trap</h2>
+
+<p>A perceptual hash (the standard 8×8 DCT variant from <code>imagehash</code>) maps an image to a 64-bit fingerprint robust to small visual changes: re-encoding, mild compression, sub-pixel resize. That's the property that makes pHash beat SHA on hit rate in the churn simulation — perturbed images look the same as the originals, so their pHashes match, so the cache hits.</p>
+
+<p>It's also what makes pHash wrong as a cache key. Two visually-distinct images can share a pHash, and any embedding that depends on those visual differences gets the wrong vector back. I scanned all 1,279,200 cross-SKU pairs in the 1,600-image corpus at Hamming distance ≤ 4 (the standard "duplicate" threshold) and capped the result at 200 colliding pairs — pairs that share a pHash to within 4 bits, came from different SKUs, and would confuse a pHash-keyed cache. Source: <code>data/phash-false-positive-summary.csv</code>.</p>
+
+<p>The cross-SKU false-positive rate at Hamming ≤ 4 on this corpus is at least 0.0156% — a lower bound, because the scan stopped at the 200-pair cap. The rate is per-pair, so it scales with the square of corpus size. On a 50K-image corpus there are ~1.25 billion cross-image pairs; even at the lower-bound rate that's ~195,000 expected cross-content collisions, each one returning the wrong vector. Each one moves a downstream retrieval, classifier, or similarity threshold. The cache stays at "100% hit rate"; the bug lives downstream, hard to attribute.</p>
+
+<figure>
+  <img src="images/fig-05-phash-false-positive-gallery.png" alt="Figure 5. Six cross-category pHash collisions from the audit. Each pair has Hamming distance ≤ 4 on the 64-bit pHash, comes from different ModelNet40 categories (airplane vs bed, bench, bookshelf, car">
+  <figcaption>Figure 5. Six cross-category pHash collisions from the audit. Each pair has Hamming distance ≤ 4 on the 64-bit pHash, comes from different ModelNet40 categories (airplane vs bed, bench, bookshelf, car, chair, guitar), and would be served the same cached vector. Collisions concentrate on low-information renders against a white background; production photos cluster differently, but the failure mode is the same.</figcaption>
+</figure>
+
+<p>The collisions concentrate on small foreground objects against a large white background — a structural artifact of pHash's 8×8 DCT downsample, which discards most spatial detail. Real product photography has its own structural artifacts (centered objects on white backgrounds is, in fact, the dominant case for product images). The point is not that pHash is broken; it is that pHash is <em>not a correctness-preserving key</em>, and the failure mode is content-distribution-dependent.</p>
+
+<p>The honest way to use pHash in a cache is as a prefilter, not as the key. Look up by pHash, get a candidate vector, then verify by re-encoding both the candidate and the query and comparing the encoded vectors. Verify costs the encoder time per candidate, defeating most of the speedup. The simpler honest answer is: use SHA as the key, accept the 20% miss rate as the cost of being right.</p>
+
+<p>The 4-row results table makes the tradeoff explicit. The recommended row — SHA256 — is bolded.</p>
+
+<p class="caption-top">Table 1. Cache strategy comparison on a 30-cycle simulation with 20% per-cycle churn. Recommended row in bold.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Strategy</th>
+      <th>30-day GPU seconds</th>
+      <th>30-day GPU hours</th>
+      <th>Final hit rate</th>
+      <th>Lookup p50 (µs)</th>
+      <th>Correctness</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>no cache</td>
+      <td>127.84</td>
+      <td>0.0355</td>
+      <td>n/a</td>
+      <td>n/a</td>
+      <td>yes</td>
+    </tr>
+    <tr>
+      <td><strong>SHA256</strong></td>
+      <td><strong>29.27</strong></td>
+      <td><strong>0.0081</strong></td>
+      <td><strong>0.80</strong></td>
+      <td><strong>511</strong></td>
+      <td><strong>yes</strong></td>
+    </tr>
+    <tr>
+      <td>pHash (alone)</td>
+      <td>4.26</td>
+      <td>0.0012</td>
+      <td>1.00</td>
+      <td>(see SHA row)</td>
+      <td>NO — silent false hits</td>
+    </tr>
+    <tr>
+      <td>SHA + pHash prefilter</td>
+      <td>29.27</td>
+      <td>0.0081</td>
+      <td>≥ 0.80</td>
+      <td>(see SHA row)</td>
+      <td>yes (pHash is hint only)</td>
+    </tr>
+  </tbody>
+</table>
+
+<p class="caption-src">Source: <code>data/churn-simulation.csv</code>, <code>data/run-sha-cache.csv</code>.</p>
+
+<p>The "NO — silent false hits" cell in the third row is the entire post in three words.</p>
+
+<h2>What the whole cache does, in one diagram</h2>
+
+<p>The control flow is small enough to fit in one mermaid box.</p>
+
+<figure class="mermaid-fig">
+  <pre class="mermaid">
+flowchart LR
+    A[image bytes] --> B[hash<br/>sha256 or phash]
+    B --> C{lookup in DuckDB<br/>model+preproc+hash}
+    C -- hit --> D[return cached<br/>float32 vector]
+    C -- miss --> E[run encoder<br/>GPU forward pass]
+    E --> F[store row<br/>vec as BLOB]
+    F --> D
+    style D fill:#a6d854,stroke:#333
+    style E fill:#fc8d62,stroke:#333
+
+  </pre>
+  <noscript><img src="images/fig-06-cache-flow-mermaid.png" alt="Figure 6. Cache lookup flow. Hash the input bytes, query the DuckDB table on the three-part key, return the cached vector on hit or run the encoder and store the new row on miss. That&#x27;s it. The hash f"></noscript>
+  <figcaption>Figure 6. Cache lookup flow. Hash the input bytes, query the DuckDB table on the three-part key, return the cached vector on hit or run the encoder and store the new row on miss. That's it. The hash function plugs in (sha256 or phash), the encoder plugs in (DINOv2 or CLIP or anything that takes image bytes and returns a float32 vector), and the storage plugs in (DuckDB here, SQLite or Redis or a file with one .npy per hash if you prefer). What doesn't plug in is the three-part key.</figcaption>
+</figure>
+
+<h2>The batch-size surprise</h2>
+
+<p>The remaining oddity is what the cache does to the encoder's batch-size sensitivity. With no cache, throughput climbs from 51 img/s at batch=1 to 104 img/s at batch=64, then plateaus — the standard transformer-on-GPU curve. With a warm cache at 90% target hit rate, the curve flattens: 324 img/s at batch=1 to 460 img/s at batch=64. The relative gain from batching collapses from 2× to 1.4×, because 90% of the work no longer touches the GPU. Throughput becomes dominated by hash-and-lookup time, which scales linearly in N with no batching effect.</p>
+
+<figure>
+  <img src="images/fig-07-throughput-batch.png" alt="Figure 7. Throughput vs batch size, cold and warm. The cold curve is the familiar transformer batching story — throughput climbs with batch size until the GPU saturates around batch=32. The warm curve">
+  <figcaption>Figure 7. Throughput vs batch size, cold and warm. The cold curve is the familiar transformer batching story — throughput climbs with batch size until the GPU saturates around batch=32. The warm curve is much flatter; at 90% hit rate, batching only buys 1.4× because most images skip the GPU entirely and per-image cost is dominated by hashing and DuckDB lookup. When the GPU stops being the bottleneck, the bottleneck moves.</figcaption>
+</figure>
+
+<p>That's the foreshadowing for Post 20. Once the cache is in place, the dominant cost of an embedding job stops being the encoder and starts being I/O, hash compute, and database lookup. Optimizing those is a different conversation with different profiles and different tradeoffs. The cache changes the shape of the problem, not just its size.</p>
+
+<h2>Anchoring what an "image" looks like to the cache</h2>
+
+<p>A reminder of what the abstract <code>image_bytes</code> actually is. One ModelNet40 chair render, the bytes that go through <code>hash_fn</code>, and the two hashes the cache could be keyed on.</p>
+
+<figure>
+  <img src="images/fig-08-3d-render-example.png" alt="Figure 8. One render from the corpus with its SHA256 and pHash labeled. The SHA256 is content-identical: change any byte, get a new hash. The pHash is content-similar: change the bytes without changin">
+  <figcaption>Figure 8. One render from the corpus with its SHA256 and pHash labeled. The SHA256 is content-identical: change any byte, get a new hash. The pHash is content-similar: change the bytes without changing the visible image, and the pHash usually stays the same. The cache key for the recommended strategy uses the SHA — full hash truncated for display.</figcaption>
+</figure>
+
+<p>Same image, same encoder, two completely different cache strategies — the SHA wins because it disagrees with itself when the bytes change.</p>
+
+<h2>Invalidation cheatsheet</h2>
+
+<p class="caption-top">Table 2. Cache invalidation cheatsheet: what triggers a re-embed, how the cache detects it, detection latency.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Trigger</th>
+      <th>Detection mechanism</th>
+      <th>Re-embed behavior</th>
+      <th>Latency to detect</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Model upgrade (S → B)</td>
+      <td>Key column <code>model_version</code> differs</td>
+      <td>All keys miss; full re-embed</td>
+      <td>O(1) per lookup</td>
+    </tr>
+    <tr>
+      <td>Preprocessing change (224 → 336)</td>
+      <td>Key column <code>preproc_version</code> differs</td>
+      <td>All keys miss; full re-embed</td>
+      <td>O(1) per lookup</td>
+    </tr>
+    <tr>
+      <td>Content edit (1 byte changed)</td>
+      <td>sha256 differs</td>
+      <td>Edited file misses; re-embeds</td>
+      <td>O(1) per lookup</td>
+    </tr>
+    <tr>
+      <td>Stored vector corruption</td>
+      <td><strong>NONE — schema does not checksum the vec column</strong></td>
+      <td>Returns corrupt vector silently</td>
+      <td>Requires explicit re-encode audit</td>
+    </tr>
+  </tbody>
+</table>
+
+<p class="caption-src">Source: <code>data/invalidation-audit.csv</code>. The last row is honest about a real gap; the schema cost to close it (a row-level CRC of the vec column) hasn't been worth it. Yet.</p>
+
+<h2>What I'd actually deploy</h2>
+
+<p>SHA256 as the cache key, three-part composite primary key in DuckDB, BLOB column for the vector. Hash function in user code so it's swappable. A <code>get_or_compute(image_bytes, compute_fn)</code> method that takes bytes — never a path — and returns a vector. Total implementation, including the perturbation utility used in the simulation, is under 300 lines of Python; the cache itself is the 40-line class quoted above.</p>
+
+<p>What I would not deploy is pHash as the only cache key. It looks great until a content-based downstream metric drifts in a way that isn't traceable to any model change or any data change. If the perceptual hash is useful for finding visually similar near-duplicates at retrieval time, that's a separate index, not a cache key. Build it on the side. Verify before returning.</p>
+
+<p>The bigger lesson: the cache changes what's expensive. Before, the bill was 100% GPU embed time. After, the bill is hash compute, DuckDB lookups, and I/O — different dominant costs, different optimizations. Post 11 measured rendering at 74% of total pipeline cost; the cache shifts that ratio further once renders themselves are cached upstream. Post 20 picks the thread up: when you're scoring a million images and the GPU is no longer the bottleneck, where does the time actually go? The answer involves a lot of hashing.</p>
+
+<h2>Reproducibility</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Claim in prose</th>
+      <th>File</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Per-cycle wall and compute time for each strategy</td>
+      <td><code>data/churn-simulation.csv</code></td>
+    </tr>
+    <tr>
+      <td>Cold vs warm wall time, p50 lookup</td>
+      <td><code>data/run-no-cache.csv</code>, <code>data/run-sha-cache.csv</code></td>
+    </tr>
+    <tr>
+      <td>pHash false-positive rate and pairs</td>
+      <td><code>data/phash-false-positive-summary.csv</code>, <code>data/phash-false-positive-pairs.csv</code></td>
+    </tr>
+    <tr>
+      <td>Invalidation audit (4 scenarios)</td>
+      <td><code>data/invalidation-audit.csv</code></td>
+    </tr>
+    <tr>
+      <td>Throughput vs batch size, cold and warm</td>
+      <td><code>data/batch-throughput.csv</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Pinned versions: torch 2.11.0+cu126, numpy 2.2.6, transformers (DINOv2 facebook/dinov2-small, 384-dim), duckdb 1.5.2, imagehash 4.3.2 (8×8 DCT pHash), Open3D 0.19.0 and trimesh 4.11.5 (upstream rendering, inherited from Post 05). Hardware: Tesla T4, 15 GB. Conda env <code>3d-dedup</code> on <code>lightsail-shapenet</code>. DINOv2-small (384-dim) was chosen here in place of the wave's canonical DINOv2-base (768-dim) to keep the 30-cycle simulation under the 25-minute wall-clock budget. The cache behavior is independent of vector dimensionality — the GPU-time saved scales with the model, not the cache logic. Image corpus: 1,600 ModelNet40 view renders from Post 05 (10 classes × 20 alphabetically-first train OFFs × 8 horizontal-ring views = 1,600 images). The original spec called for 50K ABO product images; ABO bulk download is gated and slow for a one-post experiment, so I substituted public CC-licensed renders. The cache behavior is independent of the image source; the absolute timings would scale roughly linearly with corpus size at the same per-image cost.</p>
+
+<p>To rerun:</p>
+
+<pre><code class="language-bash"># Smoke test (~3 min): 1.2K images, 3 simulation cycles, skip phash false-pos
+python code/main.py --quick
+
+# Full pipeline (~25 min on a T4)
+python code/main.py --full
+python code/make_visuals.py</code></pre>
+
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
+</script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism.min.css">
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+
+
+<hr style="margin-top:3em;border:none;border-top:1px solid #ddd;">
+<p style="font-size:15px;color:#666;text-align:center;margin-top:1.2em;">
+  <strong>Part 15 of 20</strong> &middot;
+  <a href="../../index.html">Back to the series index</a>
+</p>
+
+</body>
+</html>

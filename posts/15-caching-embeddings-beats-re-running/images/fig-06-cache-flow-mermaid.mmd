@@ -1,0 +1,9 @@
+flowchart LR
+    A[image bytes] --> B[hash<br/>sha256 or phash]
+    B --> C{lookup in DuckDB<br/>model+preproc+hash}
+    C -- hit --> D[return cached<br/>float32 vector]
+    C -- miss --> E[run encoder<br/>GPU forward pass]
+    E --> F[store row<br/>vec as BLOB]
+    F --> D
+    style D fill:#a6d854,stroke:#333
+    style E fill:#fc8d62,stroke:#333

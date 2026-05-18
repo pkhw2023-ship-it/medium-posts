@@ -1,0 +1,13 @@
+%%{init: {'theme': 'neutral'}}%%
+flowchart LR
+    A[OFF / OBJ / PLY file] --> B[parse with trimesh]
+    B --> C{repair?}
+    C -- "winding flipped" --> D[fix_winding]
+    C -- "non-manifold edges" --> E[fix_normals]
+    C -- "clean" --> F[skip]
+    D --> G[centroid to origin]
+    E --> G
+    F --> G
+    G --> H[scale to unit sphere]
+    H --> I[validate: V>0, F>0, no NaN]
+    I --> J[(canonical Mesh)]

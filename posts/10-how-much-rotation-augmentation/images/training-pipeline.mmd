@@ -1,0 +1,10 @@
+%%{init: {'theme': 'neutral'}}%%
+flowchart LR
+    A[ModelNet40 mesh]
+    B[sample 1024 points]
+    C[apply R from pool of K]
+    D[PointNet shared MLPs + max pool]
+    E[cross entropy + Adam]
+    F[checkpoint pointnet-kK.pt]
+    G["eval on SO(3)-rotated test"]
+    A --> B --> C --> D --> E --> F --> G

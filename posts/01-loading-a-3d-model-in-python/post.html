@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Loading a 3D Model in Python Without Crying</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+       font-size: 18px; line-height: 1.6; color: #222; background: #fff;
+       max-width: 720px; margin: 2.5em auto; padding: 0 1.2em; }
+h1 { font-size: 30px; line-height: 1.25; margin-top: 0; }
+h2 { font-size: 26px; line-height: 1.3; margin-top: 2em; margin-bottom: 0.6em; color: #1a1a1a; }
+h3 { font-size: 20px; line-height: 1.35; margin-top: 1.5em; margin-bottom: 0.4em; }
+p  { margin: 0 0 1em 0; }
+a  { color: #2a64a3; text-decoration: none; }
+a:hover { text-decoration: underline; }
+strong { color: #1a1a1a; }
+em { color: #444; }
+figure { margin: 1.6em 0; }
+figure img { max-width: 100%; height: auto; display: block; margin: 0 auto;
+             border-radius: 4px; }
+figcaption { font-size: 14.5px; color: #555; margin-top: 0.5em; line-height: 1.45;
+             font-style: italic; }
+pre.mermaid { background: #fff; text-align: center; margin: 1.2em 0; overflow-x: auto; }
+pre { background: #f6f8fa; padding: 12px 14px; border-radius: 5px; overflow-x: auto;
+      font-size: 14px; line-height: 1.45; margin: 1em 0; }
+code { font-family: "SF Mono", Menlo, Consolas, monospace; }
+p code, li code { background: #f0f0f0; padding: 1px 4px; border-radius: 3px;
+                  font-size: 0.92em; }
+pre code { background: transparent; padding: 0; font-size: 14px; }
+table { border-collapse: collapse; width: 100%; margin: 0.8em 0; font-size: 15px; }
+th, td { padding: 8px 10px; border-bottom: 1px solid #e3e3e3; text-align: left; }
+th { background: #f7f7f7; font-weight: 600; }
+tr:nth-child(even) { background: #fafafa; }
+hr { border: none; border-top: 1px solid #eee; margin: 2em 0; }
+@media (max-width: 480px) {
+  body { font-size: 16.5px; padding: 0 0.9em; margin: 1.5em auto; }
+  h1 { font-size: 26px; } h2 { font-size: 22px; } h3 { font-size: 18px; }
+}
+</style>
+</head>
+<body>
+<h1>Loading a 3D Model in Python Without Crying</h1>
+
+<p>A chair from ModelNet40 should not require an apology. It is <code>chair_0001.off</code>, 175 KB on disk, 2,382 vertices, 2,234 triangles. Three lines of Python should give me back a mesh.</p>
+
+<pre><code class="language-python">import trimesh
+m = trimesh.load("chair_0001.off", force="mesh", process=False)
+print(m.vertices.shape, m.faces.shape)  # → (2382, 3) (2234, 3)</code></pre>
+
+<p>Same numbers. Now Open3D, same file:</p>
+
+<pre><code class="language-python">import open3d as o3d
+m = o3d.io.read_triangle_mesh("chair_0001.off")
+print(len(m.vertices), len(m.triangles))  # → 2382 2234</code></pre>
+
+<p>Same numbers. And PyVista:</p>
+
+<pre><code class="language-python">import pyvista as pv
+m = pv.read("chair_0001.off")
+print(m.n_points, m.n_cells)  # → 2382 2234</code></pre>
+
+<p>Same numbers again. So all three loaders agree, this is a tutorial about how the three lines above are fine, and we can move on, right?</p>
+
+<p>Wrong. Run the same trio over the next 47 ModelNet40 OFF files I picked and the failure rates diverge: trimesh loads 48 out of 48, Open3D loads 40 out of 48, PyVista loads 40 out of 48 — and the eight files PyVista misses, it doesn't fail gracefully; it raises <code>SystemExit(1)</code> from inside <code>pv.read()</code>, which most callers don't catch. The geometry that does come back from the three loaders is the same numbers but not the same object — different class, different normal convention. None of that matters for the first chair. All of it matters by the time you are computing a descriptor across a dataset.</p>
+
+<p>This post is about the eight lines you write once so the next 19 posts in this series stop being a special case.</p>
+
+<h2>The three loaders return three different objects</h2>
+
+<p>The simplest version of "load a mesh" produces three different Python types:</p>
+
+<pre><code class="language-python">m_tri = trimesh.load("chair_0001.off", force="mesh", process=False)
+m_o3d = o3d.io.read_triangle_mesh("chair_0001.off")
+m_pv  = pv.read("chair_0001.off")
+
+type(m_tri).__name__   # → 'Trimesh'
+type(m_o3d).__name__   # → 'TriangleMesh'
+type(m_pv).__name__    # → 'UnstructuredGrid'</code></pre>
+
+<p>The vertex arrays are easy enough to extract:</p>
+
+<pre><code class="language-python">V_tri = np.asarray(m_tri.vertices)            # (2382, 3) float64
+V_o3d = np.asarray(m_o3d.vertices)            # (2382, 3) float64
+V_pv  = np.asarray(m_pv.points)               # (2382, 3) float64</code></pre>
+
+<p>But faces want a different ritual per library:</p>
+
+<pre><code class="language-python">F_tri = np.asarray(m_tri.faces)               # (2234, 3) int64
+F_o3d = np.asarray(m_o3d.triangles)           # (2234, 3) int32
+F_pv  = np.asarray(m_pv.cells_dict[5])        # VTK_TRIANGLE == 5</code></pre>
+
+<p>That last one is the kind of detail that costs you twenty minutes. PyVista's <code>read()</code> returns a generic VTK <code>UnstructuredGrid</code>; to get a <code>PolyData</code> with the simple <code>.faces</code> interface, you call <code>.extract_surface().triangulate()</code> and then unpack the funky <code>[3, i, j, k, 3, i, j, k, ...]</code> face array. Trimesh just hands you <code>(F, 3) int64</code>. Open3D hands you <code>(F, 3) int32</code>. Neither is wrong; both make you remember which one you're holding.</p>
+
+<p>Render all three meshes the same way and you get figures that look identical (Figure 1). The geometry agrees. But two small things differ. After the <code>extract_surface().triangulate()</code> step required to get a usable <code>PolyData</code> from PyVista, the point count drops from 2,382 to 2,368 — VTK's surface extractor discards 14 vertices not referenced by any surface cell. And only trimesh has vertex normals on access; Open3D requires <code>compute_vertex_normals()</code> first, PyVista requires <code>compute_normals()</code>.</p>
+
+<figure><img src="images/loader-side-by-side.png" alt="Three side-by-side renders of chair_0001.off loaded with trimesh, Open3D, and PyVista.">
+  <figcaption>Figure 1. chair_0001.off through three loaders. The shaded surfaces match because the geometry is the same. The chair appears to lie on its side because of ModelNet40's inconsistent axis convention — see Figure 2. PyVista reports 14 fewer vertices after <code>extract_surface().triangulate()</code>: VTK's surface extractor drops vertices that are not referenced by any surface cell.</figcaption>
+</figure>
+
+<p>Here are six ModelNet40 objects I'll use as the rest of the post's working set, one per class, all rendered through the same PyVista pipeline after centering and unit-sphere normalization (Figure 2).</p>
+
+<figure><img src="images/six-modelnet-renders.png" alt="A 2x3 grid of six rendered ModelNet40 objects: airplane, chair, table, bed, bookshelf, bench.">
+  <figcaption>Figure 2. Six canonical ModelNet40 objects after centroid centering and unit-sphere normalization, one per class. The chair lies on its side because ModelNet40's axis convention is not consistent across categories — a problem that lands again in Post 02's up-vector cheatsheet, and that the rotation-invariance bakeoff in Post 06 sidesteps entirely.</figcaption>
+</figure>
+
+<h2>Time, size, and a 970x range in vertex counts</h2>
+
+<p>I ran each loader on 48 ModelNet40 OFFs — eight files each from airplane, chair, table, bed, bookshelf, and bench — and timed the load (Figure 3). The medians are 11.4 ms for trimesh, 9.9 ms for Open3D, and 59.8 ms for PyVista. The Open3D number looks good, but it's averaged over only 40 successful loads. Eight files refuse to parse:</p>
+
+<pre><code class="language-text">[Open3D WARNING] Read OFF failed: header keyword 'OFF12636 8652 0' not supported.</code></pre>
+
+<p>That's a real ModelNet40 quirk. Some <code>.off</code> files start with <code>OFF\n12636 8652 0\n</code>, others start with <code>OFF12636 8652 0\n</code> — the standard says line break after <code>OFF</code>, but a chunk of the dataset doesn't have it. Trimesh is forgiving and parses both. Open3D rejects the no-newline variant outright. PyVista's native reader rejects them too, but the meshio fallback (<code>pip install meshio</code>) handles them — except for a handful of files where the meshio CLI raises <code>SystemExit(1)</code> from inside <code>pv.read()</code>. You can catch it with <code>try / except SystemExit</code>, but most callers don't, so I wrap PyVista in a subprocess as defense-in-depth.</p>
+
+<figure><img src="images/load-time-bar.png" alt="Bar chart of median load time per library on log y-axis, with success counts annotated.">
+  <figcaption>Figure 3. Median load time per library across 48 ModelNet40 OFFs (log scale). Bars are annotated with files successfully parsed. Trimesh handles all 48; Open3D and PyVista each fail on the same 8 files due to the OFF header quirk. PyVista's ~60 ms median includes meshio parsing plus the <code>extract_surface().triangulate()</code> ritual.</figcaption>
+</figure>
+
+<p>The other thing the 48-file run shows is how varied a "small" dataset is. Vertex counts span from 97 (a low-poly bench) to 94,335 (a high-poly airplane) — a 970× range — and the distribution is roughly bimodal on a log scale (Figure 4). Half the meshes are under 3,000 vertices; the rest stretch out toward 100,000.</p>
+
+<figure><img src="images/vertex-histogram.png" alt="Histogram of vertex counts across 48 ModelNet40 objects on a log-scaled x-axis, with a dashed median line.">
+  <figcaption>Figure 4. Vertex count across the 48-object sample (log x). The median sits near 3,000, but the distribution is roughly bimodal: hand-modeled CAD-style meshes cluster below 1,000, scan-derived meshes cluster above 10,000. Any descriptor that's not point-count-invariant will see this as a strong nuisance signal in Post 09.</figcaption>
+</figure>
+
+<p>Then there's scale. The raw bounding-box diagonals span from 28.8 to 6,822.7 units — a 237× range across the 48 meshes (Figure 5). An untouched ModelNet40 corpus mixes meshes the size of a fingernail with meshes the size of a city block, and the units are nominally "the same." A nearest-neighbor query on raw meshes will return the smallest mesh five times out of five, regardless of shape.</p>
+
+<figure><img src="images/bbox-before-after.png" alt="Scatter plot of bounding-box diagonals before normalization (left, log y) and after (right), colored by class.">
+  <figcaption>Figure 5. Bounding-box diagonal before and after normalization, uniform log y. Raw meshes span almost three orders of magnitude. After <code>centroid_center().normalize_unit_sphere()</code> every mesh lands at radius 1.0 ± 0.01.</figcaption>
+</figure>
+
+<h2>The eight lines that fix all of it</h2>
+
+<p>Here is the entire load-and-normalize routine I use everywhere downstream.</p>
+
+<pre><code class="language-python">import numpy as np, trimesh
+
+def load_canonical(path):
+    m = trimesh.load(path, force="mesh", process=False)
+    trimesh.repair.fix_winding(m)              # 48/48 fixed on this set
+    m.vertices -= m.vertices.mean(axis=0)      # centroid to origin
+    r = np.linalg.norm(m.vertices, axis=1).max()
+    m.vertices /= max(r, 1e-9)                 # max-radius to 1
+    if not (len(m.vertices) &gt; 0 and len(m.faces) &gt; 0):
+        raise ValueError(f"empty mesh from {path}")
+    return m</code></pre>
+
+<p>Eight lines. They turn the file system into a uniform stream of canonical meshes. The same routine is the first step of the pipeline I'll repeat for the rest of the series (Figure 6). It ships in the series kit as <code>medium20.render_kit.load_canonical</code>, so later posts can <code>from medium20.render_kit import load_canonical</code> without copy-pasting these eight lines.</p>
+
+<figure><img src="images/load-pipeline-mermaid.png" alt="Flowchart from file through trimesh parse, repair branch, centering, scaling, validation, to canonical Mesh.">
+  <figcaption>Figure 6. The canonical load pipeline. Every later post in this series assumes the mesh has been through these five steps. The branch on "repair" is where most real-world surprises live — winding flips and non-manifold edges silently corrupt downstream descriptors if you skip them.</figcaption>
+</figure>
+
+<p>A few notes on the routine. <code>force="mesh"</code> collapses scene-graph files (some <code>.obj</code>, all <code>.glb</code>) into a single concatenated mesh — without it <code>trimesh.load</code> returns a <code>Scene</code> for those formats and your shape-comparison code crashes a layer up. <code>process=False</code> turns off trimesh's automatic vertex deduplication and reordering; you do not want trimesh quietly mutating your indices the first time it sees a mesh, because you have not yet decided whether the original vertex order matters to your downstream code.</p>
+
+<p><code>fix_winding</code> is the most useful single repair call. Across my 48-file sample, 35 files came in winding-consistent and 13 did not. After <code>fix_winding</code>, all 48 are consistent. Watertightness is a different story — only one of the 48 was watertight to begin with, and <code>fix_winding</code> does not change that. Repair has limits. Most ModelNet40 meshes are open shells with holes, t-junctions, and isolated edges, and that is fine for almost everything we will do with them. Watertightness only matters when you want to compute interior volume or do voxel-fill descriptors, and even then you can fall back to surface-only voxels with about 0.3% accuracy cost (we will get there in Post 07).</p>
+
+<h2>Four things that went wrong</h2>
+
+<p>The interesting failure modes are not the OFF-header crashes — that's PyVista needing meshio and Open3D being strict. The interesting ones happen <em>after</em> the load succeeds, because none of them raise an exception (Figure 7).</p>
+
+<figure><img src="images/broken-gallery.png" alt="A 2x4 grid: top row shows four broken meshes (inverted normals, raw scale, non-manifold, missing faces); bottom row shows each after repair.">
+  <figcaption>Figure 7. Four failure modes (top) and the one-line fix (bottom). Cases (a) and (c) look visually unchanged because the renderer's default shading hides the bug — but the downstream effect is real, which is exactly why these fail silently in practice.</figcaption>
+</figure>
+
+<p>The four cases, with diagnosis.</p>
+
+<p>Inverted winding. Some files come in with face winding reversed — common when a mesh was exported from a left-handed coordinate system into a right-handed loader. Renderers with two-sided lighting hide it. Descriptors that consume face normals (HOG-on-render in Post 12, voxel-occupancy ratios in Post 08) get garbage. The fix is <code>trimesh.repair.fix_winding(m)</code>, which checks adjacent-face consistency and flips the minority. On my 48-file set it converted the 13 inconsistent files to consistent.</p>
+
+<p>Raw scale, the most consequential of the four. Plot a raw airplane and a raw chair in the same scene and one of them disappears. ModelNet40 was authored by many people in many CAD tools, and the units are nominal at best. Any distance metric, any embedding, any nearest-neighbor query you run on raw meshes is dominated by scale, not shape. The fix is <code>m.vertices /= np.linalg.norm(m.vertices, axis=1).max()</code> after centering. This is the single most important line in the routine.</p>
+
+<p>Non-manifold edges. A non-manifold edge is one shared by three or more faces — geometrically impossible for a real surface but common in CAD output where edges of intersecting solids are recorded twice. Trimesh exposes <code>m.is_winding_consistent</code> and <code>m.is_watertight</code>; neither catches every case, but together they give you a reliable signal. The fix in mild cases is <code>trimesh.repair.fix_normals(m)</code> followed by <code>trimesh.repair.fill_holes(m)</code>; in pathological cases you accept the artifact and move on.</p>
+
+<p>Missing faces. ModelNet40 has files where the OFF body claims N faces and provides fewer. Trimesh tolerates this and gives you a sparse mesh with visible holes. The repair tools cannot reconstruct missing geometry, but <code>m.merge_vertices()</code> followed by <code>trimesh.repair.fill_holes(m)</code> will close small triangular gaps. Anything larger needs Poisson reconstruction, which is out of scope for this series.</p>
+
+<p>A pattern across all four: the visible render almost never tells you anything is wrong. The bug lives in the index arrays, the normal directions, or the face-count metadata — places renderers paper over and descriptors trip on. The lesson I take from this is to never use rendering as a load-time sanity check. Render the output of your descriptor pipeline, not the input.</p>
+
+<h2>ModelNet40's axis convention is not a convention</h2>
+
+<p>Figure 2 hinted at this: the chair lies on its side. The reason is that ModelNet40 was crowd-assembled from many CAD sources, and "up" is whichever axis the original author happened to use. I measured this by computing the longest bounding-box axis for the 8 train samples in each of my six classes and voting:</p>
+
+<div style="overflow-x:auto">
+
+<p>Table 1. Majority "up" axis (defined as the longest bbox axis) across 8 ModelNet40 train samples per class. Columns show vote counts per axis.</p>
+
+<table>
+  <thead><tr><th>Class</th><th>n</th><th>Majority up</th><th>X-up</th><th>Y-up</th><th>Z-up</th></tr></thead>
+  <tbody>
+    <tr><td>airplane</td><td>8</td><td><strong>X</strong></td><td>4</td><td>4</td><td>0</td></tr>
+    <tr><td>bed</td><td>8</td><td><strong>Y</strong></td><td>0</td><td><strong>8</strong></td><td>0</td></tr>
+    <tr><td>bench</td><td>8</td><td><strong>X</strong></td><td>5</td><td>3</td><td>0</td></tr>
+    <tr><td>bookshelf</td><td>8</td><td><strong>Z</strong></td><td>1</td><td>0</td><td><strong>7</strong></td></tr>
+    <tr><td>chair</td><td>8</td><td><strong>Z</strong></td><td>0</td><td>0</td><td><strong>8</strong></td></tr>
+    <tr><td>table</td><td>8</td><td><strong>Y</strong></td><td>3</td><td>5</td><td>0</td></tr>
+  </tbody>
+</table>
+
+<p>Source: data/axis-audit.csv (6 rows).</p>
+
+</div>
+
+<p>Two classes are internally consistent (bed Y, chair Z); the other four split. Airplane is the worst — half the samples have the long axis on X, half on Y, none on Z. This is what the chair-on-its-side in Figure 2 was telling you, generalized across the dataset. Any rotation-sensitive evaluation has to either align the meshes (Post 02 walks through the four-line fix) or render from enough viewpoints that the canonical orientation does not matter (Post 06).</p>
+
+<h2>Format support, briefly</h2>
+
+<p>Across the three loaders, OBJ, PLY, and STL all "just work." OFF works in trimesh and is a footnote-with-asterisks in Open3D and PyVista (Table 2). FBX is supported by exactly none of them in the open-source distribution — you need Autodesk's SDK or a converter. GLTF/GLB is supported by all three, but PyVista loads it through meshio in a way that strips materials.</p>
+
+<div style="overflow-x:auto">
+
+<p>Table 2. Loader support for common 3D formats out of the box (trimesh 4.11, Open3D 0.19, PyVista 0.47 with meshio installed). "Partial" means the loader either fails on a subset of valid files or requires post-processing to get a usable mesh.</p>
+
+<table>
+  <thead><tr><th>Format</th><th>trimesh</th><th>Open3D</th><th>PyVista</th></tr></thead>
+  <tbody>
+    <tr><td>OFF</td><td><strong>Yes</strong></td><td>Partial</td><td>Partial</td></tr>
+    <tr><td>OBJ</td><td><strong>Yes</strong></td><td><strong>Yes</strong></td><td><strong>Yes</strong></td></tr>
+    <tr><td>PLY</td><td><strong>Yes</strong></td><td><strong>Yes</strong></td><td><strong>Yes</strong></td></tr>
+    <tr><td>STL</td><td><strong>Yes</strong></td><td><strong>Yes</strong></td><td><strong>Yes</strong></td></tr>
+    <tr><td>GLTF</td><td><strong>Yes</strong></td><td><strong>Yes</strong></td><td>Partial</td></tr>
+    <tr><td>GLB</td><td><strong>Yes</strong></td><td><strong>Yes</strong></td><td>Partial</td></tr>
+    <tr><td>FBX</td><td>No</td><td>No</td><td>No</td></tr>
+    <tr><td>3MF</td><td><strong>Yes</strong></td><td>No</td><td>No</td></tr>
+    <tr><td>DAE</td><td><strong>Yes</strong></td><td><strong>Yes</strong></td><td>No</td></tr>
+  </tbody>
+</table>
+
+<p>Source: data/format-support.csv (9 rows). Verified by attempting one file per cell on lightsail-shapenet with library versions pinned in code/requirements.txt.</p>
+
+</div>
+
+<p>The honest summary: if you control the format upstream, use OBJ or PLY. If you don't, trimesh is the only loader that will not bite you on the long tail.</p>
+
+<h2>Which loader I reach for when</h2>
+
+<p>Trimesh is the default. It loads almost everything, it gives you back NumPy arrays in the obvious shape, and its repair toolbox is the most complete of the three. I use it for any pipeline that touches dataset iteration, repair, or analysis (Table 3).</p>
+
+<p>PyVista is for visualization. The off-screen Plotter, headless EGL support, and built-in trackball widget make it the path of least resistance for batch-rendering or for showing a result in a Jupyter cell. The startup cost is real — <code>pv.read</code> runs in the tens of milliseconds (median ~60 ms on this set; see Figure 3) and the off-screen Plotter takes another few hundred milliseconds to spin up the first time — but for visualization those costs are invisible.</p>
+
+<p>Open3D earns its slot when point clouds enter the picture. Its RANSAC plane fitter, ICP implementation, and KDTree are stronger than what trimesh ships. If your mesh ever has to talk to a point cloud, Open3D is the bridge.</p>
+
+<div style="overflow-x:auto">
+
+<p>Table 3. Which loader I reach for, by task.</p>
+
+<table>
+  <thead><tr><th>Task</th><th>Recommended</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>Quick visualization</td><td>PyVista</td><td>One-line off-screen Plotter with sensible camera defaults</td></tr>
+    <tr><td>Headless batch render</td><td>PyVista</td><td>VTK + EGL is reliable on GPU boxes</td></tr>
+    <tr><td>Interactive demo</td><td>PyVista</td><td>Best trackball + ipywidgets bridge</td></tr>
+    <tr><td>Repair and export</td><td><strong>trimesh</strong></td><td>fix_winding / fix_normals / fill_holes round-trip cleanly</td></tr>
+    <tr><td>Mesh analysis</td><td><strong>trimesh</strong></td><td>Curvature, geodesics, sampling, voxelization all built in</td></tr>
+    <tr><td>Point cloud bridge</td><td>Open3D</td><td>read_point_cloud + RANSAC + ICP are the strongest of the three</td></tr>
+    <tr><td>Numpy-only handoff</td><td><strong>trimesh</strong></td><td>Returns NumPy arrays directly with no surprise reordering</td></tr>
+  </tbody>
+</table>
+
+<p>Source: data/loader-recommendation.csv (7 rows).</p>
+
+</div>
+
+<p>For the rest of this series the default reach is trimesh, with PyVista swapped in the moment a render is required.</p>
+
+<h2>What comes next</h2>
+
+<p>A canonical mesh is what every later post in this series will assume. It's centered, scaled to the unit sphere, winding-consistent, and validated for non-empty geometry. That's the contract.</p>
+
+<p>The next problem is that even with a perfect mesh in memory, the first thousand renders you produce will be completely white. The mesh loaded, the camera was set, the PNG came out as 1024 by 1024 of pure white. Post 02 is about why that happens, what the camera target needs to be, and the one-line fix that drops the blank-image rate from 84% to 0%.</p>
+
+<h2>Reproducibility</h2>
+
+<p>All code, data, and figures for this post live in the repo alongside <code>post.md</code>:</p>
+
+<p>- <code>code/load_benchmarks.py</code> — generates <code>data/load-time.csv</code>, <code>data/bbox-audit.csv</code>, <code>data/repair-coverage.csv</code>, <code>data/vertex-histogram.csv</code>, <code>data/summary.json</code>. Runs end-to-end in about 80 s on a Tesla T4. Reads the ModelNet40 root from <code>$MODELNET40_ROOT</code>; set it to your local extract before running.</p>
+<p>- <code>code/make_visuals.py</code> — generates Figures 1, 2, 3, 4, 5, 7. Run after <code>load_benchmarks.py</code>.</p>
+<p>- <code>code/render_mermaid.py</code> — generates Figure 6 (<code>images/load-pipeline-mermaid.png</code>) via mermaid-cli if installed, otherwise via kroki.io.</p>
+<p>- <code>data/format-support.csv</code> — Table 2.</p>
+<p>- <code>data/loader-recommendation.csv</code> — Table 3.</p>
+<p>- <code>data/axis-audit.csv</code> — Table 1, produced by <code>code/axis_audit.py</code>.</p>
+
+<table>
+  <thead><tr><th>Claim in prose</th><th>Data source</th></tr></thead>
+  <tbody>
+    <tr><td>trimesh 48/48, Open3D 40/48, PyVista 40/48</td><td><code>data/load-time.csv</code> (success column)</td></tr>
+    <tr><td>Median load times 11.4 / 9.9 / 59.8 ms</td><td><code>data/summary.json::load_times_ms</code></td></tr>
+    <tr><td>Vertex range 97 → 94,335</td><td><code>data/summary.json::vertex_min,vertex_max</code></td></tr>
+    <tr><td>BBox diag range 28.8 → 6,822.7</td><td><code>data/summary.json::bbox</code></td></tr>
+    <tr><td>Winding-consistent 35/48 → 48/48</td><td><code>data/repair-coverage.csv</code> (pre_winding, post_winding)</td></tr>
+    <tr><td>chair_0001 V=2382 (trimesh/Open3D/PyVista raw), V=2368 (PyVista after extract_surface)</td><td><code>data/load-time.csv</code> (chair_0001 rows + figure caption discussion)</td></tr>
+  </tbody>
+</table>
+
+<p>Versions used: trimesh 4.11.5, Open3D 0.19.0, PyVista 0.47.3, meshio 5.3.5, NumPy 2.x. Conda env <code>3d-dedup</code> on lightsail-shapenet (Tesla T4, Ubuntu 22.04). Dataset: ModelNet40 (Wu et al. 2015, CC BY-NC) at the standard release, sampling the first 8 train OFFs alphabetically from each of <code>airplane</code>, <code>chair</code>, <code>table</code>, <code>bed</code>, <code>bookshelf</code>, <code>bench</code>. Load timings are from a single run on a shared GPU host and vary ~10-20% between runs; treat the medians as order-of-magnitude indicators, not microbenchmarks.</p>
+<script>
+  // Prism.js for code highlighting; degrades gracefully if blocked.
+  var p1 = document.createElement('link');
+  p1.rel = 'stylesheet';
+  p1.href = 'https://cdn.jsdelivr.net/npm/prismjs@1.29/themes/prism.min.css';
+  document.head.appendChild(p1);
+  var s1 = document.createElement('script');
+  s1.src = 'https://cdn.jsdelivr.net/npm/prismjs@1.29/components/prism-core.min.js';
+  document.body.appendChild(s1);
+  s1.onload = function() {
+    var s2 = document.createElement('script');
+    s2.src = 'https://cdn.jsdelivr.net/npm/prismjs@1.29/components/prism-python.min.js';
+    document.body.appendChild(s2);
+  };
+</script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
+</script>
+
+<hr style="margin-top:3em;border:none;border-top:1px solid #ddd;">
+<p style="font-size:15px;color:#666;text-align:center;margin-top:1.2em;">
+  <strong>Part 1 of 20</strong> &middot;
+  <a href="../../index.html">Back to the series index</a>
+</p>
+
+</body>
+</html>

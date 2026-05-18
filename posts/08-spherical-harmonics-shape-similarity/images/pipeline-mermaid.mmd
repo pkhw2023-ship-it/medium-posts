@@ -1,0 +1,10 @@
+%%{init: {'theme': 'neutral'}}%%
+flowchart LR
+    M[ModelNet40 mesh]
+    C[centroid + unit-sphere normalize]
+    R[cast 642 rays from origin]
+    F[radial-occupancy f on the sphere]
+    P[project onto real SH basis]
+    K[per-band power P(l) = sqrt sum c_lm^2]
+    D[9-D rotation-invariant descriptor]
+    M --> C --> R --> F --> P --> K --> D

@@ -1,0 +1,21 @@
+%%{init: {'theme': 'neutral'}}%%
+flowchart TD
+    A[Pick a renderer]
+    B{Need gradients?}
+    C[nvdiffrast]
+    D{Batch &gt; 100 renders/sec?}
+    E[Kaolin or PyTorch3D]
+    F{Headless cluster?}
+    G[Open3D]
+    H{Quick debug plot?}
+    I[matplotlib]
+    J[PyVista]
+    A --> B
+    B -- yes --> C
+    B -- no --> D
+    D -- yes --> E
+    D -- no --> F
+    F -- yes --> G
+    F -- no --> H
+    H -- yes --> I
+    H -- no --> J

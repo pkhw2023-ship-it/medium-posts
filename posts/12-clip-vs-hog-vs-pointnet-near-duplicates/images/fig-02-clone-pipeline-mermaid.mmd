@@ -1,0 +1,26 @@
+%%{init: {'theme': 'neutral'}}%%
+flowchart LR
+    Mesh[200 ModelNet40 meshes]
+    Rot[rotate SO(3)]
+    Dec[quadric decimate]
+    Noi[surface noise]
+    Tex[retexture HSV-shift]
+    Clones[4,200 clones]
+    R[render 8 views, Open3D]
+    CLIP[CLIP-mv]
+    HOG[HOG front-view]
+    PN[PointNet-proxy]
+    Pairs[pos / neg pairs at 1:50]
+    PR[PR-AUC per perturbation]
+    Mesh --> Rot --> Clones
+    Mesh --> Dec --> Clones
+    Mesh --> Noi --> Clones
+    Mesh --> Tex --> Clones
+    Clones --> R
+    R --> CLIP
+    R --> HOG
+    Clones --> PN
+    CLIP --> Pairs
+    HOG --> Pairs
+    PN --> Pairs
+    Pairs --> PR

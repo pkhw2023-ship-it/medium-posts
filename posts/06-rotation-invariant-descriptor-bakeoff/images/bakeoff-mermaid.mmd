@@ -1,0 +1,15 @@
+%%{init: {'theme': 'neutral'}}%%
+flowchart LR
+    M[ModelNet40 mesh] --> N[centroid + unit sphere]
+    N --> D1[SH power spectrum]
+    N --> D2[ZernikeApprox]
+    N --> D3[Laplace-Beltrami eigen]
+    N --> D4[PointNet proxy]
+    N --> D5[8-view CLIP mean-pool]
+    D1 --> G[cosine FAISS index]
+    D2 --> G
+    D3 --> G
+    D4 --> G
+    D5 --> G
+    Q[SO(3)-rotated query] --> G
+    G --> R[top-5 retrieval mAP]

@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Five Ways to Render a 3D Chair in Python (and When to Pick Which)</title>
+<style>
+:root { --body: #1d1f22; --muted: #5b6370; --bg: #ffffff; --code-bg: #f6f8fa;
+        --inline-bg: #f0f0f0; --rule: #e6e8eb; --link: #3a73c8; }
+* { box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+       Roboto, "Helvetica Neue", Arial, sans-serif;
+       color: var(--body); background: var(--bg);
+       font-size: 18px; line-height: 1.6; margin: 0; }
+main { max-width: 720px; margin: 0 auto; padding: 32px 20px 96px; }
+h1 { font-size: 34px; line-height: 1.2; margin: 16px 0 24px; }
+h2 { font-size: 26px; margin-top: 2em; margin-bottom: 0.5em; }
+h3 { font-size: 20px; margin-top: 1.5em; margin-bottom: 0.4em; }
+p { margin: 1em 0; }
+a { color: var(--link); text-decoration: none; border-bottom: 1px solid #cfd8e3; }
+a:hover { border-bottom-color: var(--link); }
+figure { margin: 1.6em 0; }
+figure img { display: block; width: 100%; height: auto; border-radius: 4px; }
+figcaption { font-size: 14px; color: var(--muted); margin-top: 8px;
+             line-height: 1.5; }
+code { background: var(--inline-bg); padding: 1px 4px; border-radius: 3px;
+       font-size: 0.92em; font-family: ui-monospace, SFMono-Regular,
+       Menlo, Monaco, "Cascadia Code", monospace; }
+pre { background: var(--code-bg); padding: 12px 14px; border-radius: 6px;
+      overflow-x: auto; line-height: 1.45; font-size: 14px; }
+pre code { background: transparent; padding: 0; font-size: 14px; }
+.table-wrap { overflow-x: auto; margin: 1.4em 0; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 8px 10px; border-bottom: 1px solid var(--rule);
+         font-size: 15px; text-align: left; }
+th { color: var(--muted); font-weight: 600; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr:nth-child(even) { background: #fafafa; }
+.mermaid { background: white; padding: 8px 0; text-align: center; }
+hr { border: none; border-top: 1px solid var(--rule); margin: 2.5em 0; }
+@media (max-width: 480px) {
+  body { font-size: 17px; }
+  main { padding: 20px 14px 64px; }
+  h1 { font-size: 28px; }
+  h2 { font-size: 22px; }
+}
+</style>
+</head>
+<body>
+<main>
+<h1>Five Ways to Render a 3D Chair in Python (and When to Pick Which)</h1>
+<p>I rendered the same folding chair through four Python libraries — matplotlib, Open3D, PyVista, and nvdiffrast — at the same eight camera poses on the same Tesla T4 GPU. The mesh is identical: <code>chair_0001.off</code> from ModelNet40, 12 KB of triangle soup. The pixels are not identical. Setup ranges from 8 lines to 24. Throughput ranges from 6 to 1,268 renders per second.</p>
+<p>The fifth library, Kaolin, is missing from the grid. That's a story by itself, and I'll come back to it.</p>
+<figure><img src="images/hero-4x4-grid.png" alt="Figure 1. The same four ModelNet40 chairs (columns) through four libraries (rows). The geometry is identical, the camera pose is identical, "><figcaption>Figure 1. The same four ModelNet40 chairs (columns) through four libraries (rows). The geometry is identical, the camera pose is identical, the resolution is identical (256x256). matplotlib's <code>Poly3DCollection</code> has no per-vertex normals and uses a painter's-algorithm depth-sort, so its chairs look flat and the dense <code>chair_0050</code> and <code>chair_0100</code> show visible z-order glitches. Open3D's Filament adds soft ambient occlusion and a warm tint. PyVista is the cleanest VTK PBR look. nvdiffrast's hand-rolled Lambertian + anti-aliasing gives the crispest edges.</figcaption></figure>
+<p>The point of this post is not "which library is best." It's "which library is best <em>for the job you have</em>." Your next 10,000 renders are going to lock you into a renderer choice, and that choice quietly determines whether batched throughput is 30 RPS or 1,000 RPS. It also decides whether the loss you backprop through actually reaches your camera parameters, or stops at the rasterizer.</p>
+<p>So: same chair, same poses, same machine. What changes when the library changes?</p>
+<h2>The minimum-viable render in four flavors</h2>
+<p>PyVista is the shortest path from <code>trimesh.Trimesh</code> to a saved PNG:</p>
+<pre><code class="language-python">import pyvista as pv, numpy as np
+faces = np.hstack([np.full((len(mesh.faces), 1), 3), mesh.faces]).flatten()
+pdata = pv.PolyData(mesh.vertices, faces)
+p = pv.Plotter(off_screen=True, window_size=(256, 256))
+p.add_mesh(pdata, color=&quot;#8da0cb&quot;, smooth_shading=True)
+p.camera_position = [eye, [0, 0, 0], [0, 0, 1]]
+p.screenshot(&quot;out.png&quot;)
+p.close()</code></pre>
+<p>Eight lines (counting only code; no whitespace, no comments). PyVista is VTK with a friendlier surface. It runs offscreen on a headless box. Its defaults look polished out of the gate. That's why I picked it as the visual anchor for the fidelity comparison later.</p>
+<p>matplotlib is one line longer and uses no GPU at all:</p>
+<pre><code class="language-python">from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+import matplotlib.pyplot as plt
+fig = plt.figure(figsize=(2.56, 2.56), dpi=100)
+ax = fig.add_subplot(111, projection=&quot;3d&quot;)
+ax.add_collection3d(Poly3DCollection(mesh.vertices[mesh.faces],
+                                     facecolor=&quot;#8da0cb&quot;))
+ax.set_xlim(-1, 1); ax.set_ylim(-1, 1); ax.set_zlim(-1, 1)
+ax.view_init(elev=20, azim=45); ax.set_axis_off()
+fig.savefig(&quot;out.png&quot;, facecolor=&quot;white&quot;)</code></pre>
+<p>Nine lines. Zero GPU dependencies. No EGL. No offscreen contexts. matplotlib is the renderer that ships in every notebook you'll ever open, and that one fact is its biggest feature.</p>
+<p>Open3D needs an offscreen renderer and a material:</p>
+<pre><code class="language-python">import open3d as o3d
+r = o3d.visualization.rendering.OffscreenRenderer(256, 256)
+m3d = o3d.geometry.TriangleMesh(
+    o3d.utility.Vector3dVector(mesh.vertices),
+    o3d.utility.Vector3iVector(mesh.faces))
+m3d.compute_vertex_normals(); m3d.paint_uniform_color([0.55, 0.63, 0.80])
+mat = o3d.visualization.rendering.MaterialRecord(); mat.shader = &quot;defaultLit&quot;
+r.scene.add_geometry(&quot;m&quot;, m3d, mat); r.scene.set_background([1, 1, 1, 1])
+r.setup_camera(60.0, [0, 0, 0], list(eye), [0, 0, 1])
+o3d.io.write_image(&quot;out.png&quot;, r.render_to_image())</code></pre>
+<p>Twelve lines. Open3D uses Filament under the hood, gets EGL headless mode out of the box, and its <code>setup_camera(fov, target, eye, up)</code> is the cleanest look-at API in the lot.</p>
+<p>nvdiffrast is the outlier: roughly 24 lines to get the first pixel out the door, because nvdiffrast does not have a camera object. You hand it your own model-view-projection matrix, then your own shader. The <code>_perspective</code> and <code>_view</code> helpers below are 6-line standard OpenGL look-at and perspective builders; see <code>code/main.py</code> for the exact bodies.</p>
+<pre><code class="language-python">import nvdiffrast.torch as dr, torch
+ctx = dr.RasterizeCudaContext()
+V = torch.as_tensor(mesh.vertices, device=&quot;cuda&quot;, dtype=torch.float32)
+F = torch.as_tensor(mesh.faces,    device=&quot;cuda&quot;, dtype=torch.int32)
+N = torch.as_tensor(mesh.vertex_normals, device=&quot;cuda&quot;, dtype=torch.float32)
+V_h = torch.nn.functional.pad(V, (0, 1), value=1.0)            # (N,4) homog
+P  = _perspective(60.0, 1.0, 0.05, 50.0, &quot;cuda&quot;)               # 4x4
+Mv = _view(eye, [0, 0, 0], [0, 0, 1], &quot;cuda&quot;)                  # 4x4
+V_clip = ((P @ Mv) @ V_h.T).T.contiguous().unsqueeze(0)        # (1,N,4)
+rast, _ = dr.rasterize(ctx, V_clip, F, resolution=(256, 256))
+n_interp, _ = dr.interpolate(N.unsqueeze(0).contiguous(), rast, F)
+n = torch.nn.functional.normalize(n_interp, dim=-1)
+diffuse = torch.clamp(-(n @ torch.tensor([-0.5, -0.5, -1.0],
+                                          device=&quot;cuda&quot;)), 0, 1).unsqueeze(-1)
+rgb = torch.tensor([0.55, 0.63, 0.80], device=&quot;cuda&quot;) * (0.35 + 0.65 * diffuse)
+cov = (rast[..., 3:4] &gt; 0).float()
+rgb = cov * rgb + (1 - cov) * torch.ones_like(rgb)
+rgb = dr.antialias(rgb, rast, V_clip, F)
+Image.fromarray((rgb.clamp(0, 1) * 255).byte().cpu().numpy()[0, ::-1]).save(&quot;out.png&quot;)</code></pre>
+<p>Twenty-four lines, and that's already collapsing helper functions. The tradeoff is the reason nvdiffrast exists: every step of that pipeline is differentiable. The MVP matrix is yours. The shader is yours. The diff that flows backward through <code>rgb</code> reaches the vertices, the normals, the camera, the light. Nothing else on this list does that.</p>
+<figure><img src="images/loc-bar-chart.png" alt="Figure 2. Lines of code from a loaded mesh to a saved PNG, no whitespace and no comments. PyVista and matplotlib live in the same register; "><figcaption>Figure 2. Lines of code from a loaded mesh to a saved PNG, no whitespace and no comments. PyVista and matplotlib live in the same register; nvdiffrast costs you about three times the typing and gives you a differentiable rasterizer in exchange.</figcaption></figure>
+<p>The takeaway from that chart is not "PyVista wins." It's that <em>for the job of rendering</em>, the cost of entry is mostly flat — and the one library that's 3x as long does an entirely different thing.</p>
+<h3>The Kaolin gap</h3>
+<p>I tried to ship Kaolin as the fifth library. I could not. NVIDIA's prebuilt wheel index doesn't have a Kaolin wheel that lines up with torch 2.11 + CUDA 12.6 (the wheels on the public S3 stop several torch versions earlier), and lightsail-shapenet is running torch 2.11.0 on CUDA 12.6. A source build was the next option, but Kaolin's CUDA extensions pin specific compute capabilities and toolkit minor versions; on a Tesla T4 with the current driver, I couldn't get the build to finish inside the runtime budget for this post. The honest answer is: if you want Kaolin in 2026, you either downgrade torch (and lose 2.11's tooling) or you maintain a custom build (and own that pain forever).</p>
+<p>For the rest of this post, the working set is matplotlib, Open3D, PyVista, and nvdiffrast. PyTorch3D would fill the same "differentiable + batched + high-level mesh API" slot Kaolin was meant to fill; the install pain is real but better-documented.</p>
+<h2>Throughput on a T4</h2>
+<p>Single-pose throughput, warm cache, 256x256, one chair (<code>chair_0001</code>). I use 256x256 here because it's a clean power of two for a renderer-comparison benchmark; the downstream posts in this series use 224x224 because that's what CLIP and DINOv2 ingest. The relative rankings hold to within about 5% at either resolution.</p>
+<figure><img src="images/throughput-bar.png" alt="Figure 3. Renders per second on a Tesla T4. Bars are batch=1; the two darker bars on nvdiffrast show what batched rasterization buys you at "><figcaption>Figure 3. Renders per second on a Tesla T4. Bars are batch=1; the two darker bars on nvdiffrast show what batched rasterization buys you at batch=8 and batch=32. The y-axis is logarithmic because matplotlib and nvdiffrast live two orders of magnitude apart.</figcaption></figure>
+<p>Read that chart twice. matplotlib is 6 renders per second. Pure CPU, depth-sorted in Python. PyVista is 29 RPS. VTK is CPU-rasterizing under the hood, and it's spending most of its time creating and tearing down the offscreen plotter window between poses. Open3D's Filament is GPU-accelerated (Filament is a full PBR engine) and reuses one persistent offscreen renderer with a swept camera, which puts it at 276 RPS. nvdiffrast at batch=1 is 481. nvdiffrast at batch=32 is 1,268, and the gain from batch=8 (1,174) to batch=32 is small because at this mesh size we've saturated the small dispatch on the T4 and we're back in launch-overhead territory.</p>
+<p>Two things to note. First, the gap between PyVista (29) and Open3D (276) is mostly an apples-to-oranges artifact of how the wrappers handle persistent state: Open3D's <code>OffscreenRenderer</code> is built to be reused; PyVista's <code>Plotter</code> is built to be reset. In a real pipeline you can warm-pool either, but Open3D will still win because it has a GPU. Second, "renders per second" is the wrong metric the moment you care about gradients. At that point you'd happily trade an order of magnitude for <code>rgb.backward()</code> actually doing something.</p>
+<p>Hold this 1,268 number — it'll come back when we talk about batched training in Post 10.</p>
+<p>Table 1 has the numbers and the peak memory. The throughput here is a single warm-cache run on <code>chair_0001</code> (no averaging — run-to-run variance is around ±5%) and matplotlib is timed over 25 renders instead of 50/100 to keep the wall-clock under a minute; the <code>n_renders</code> column in <code>data/throughput.csv</code> is the source of truth.</p>
+<p>Table 1. Throughput and peak GPU memory on a Tesla T4, 256x256 output, <code>chair_0001</code>, single-threaded, warm cache.</p>
+<div class="table-wrap"><table>
+<thead><tr>
+<th>Library</th>
+<th class="num">Setup LOC</th>
+<th class="num">Batch 1 (RPS)</th>
+<th class="num">Batch 32 (RPS)</th>
+<th class="num">Peak GPU (MB)</th>
+</tr></thead><tbody>
+<tr>
+<td>matplotlib</td>
+<td class="num">9</td>
+<td class="num">5.6</td>
+<td class="num">—</td>
+<td class="num">8</td>
+</tr>
+<tr>
+<td>PyVista</td>
+<td class="num">8</td>
+<td class="num">28.8</td>
+<td class="num">—</td>
+<td class="num">8</td>
+</tr>
+<tr>
+<td>Open3D</td>
+<td class="num">12</td>
+<td class="num">276.4</td>
+<td class="num">—</td>
+<td class="num">8</td>
+</tr>
+<tr>
+<td>nvdiffrast</td>
+<td class="num">24</td>
+<td class="num"><strong>481.4</strong></td>
+<td class="num"><strong>1,267.8</strong></td>
+<td class="num"><strong>243</strong></td>
+</tr>
+</tbody></table></div>
+<p>Source: data/throughput.csv joined with data/setup-loc.csv (10 rows).</p>
+<p>Peak GPU memory grows linearly with batch size on nvdiffrast — 16 MB at batch=1, 67 MB at batch=8, 243 MB at batch=32. That linear scaling is what lets you decide a-priori how big a batch fits: a 16 GB T4 with one full mesh buffer holds dozens of batch-32 calls in parallel before you OOM.</p>
+<figure><img src="images/peak-memory.png" alt="Figure 4. Peak GPU memory by batch size for nvdiffrast. The scaling is close to linear in batch, which is what you want — it makes the &quot;how "><figcaption>Figure 4. Peak GPU memory by batch size for nvdiffrast. The scaling is close to linear in batch, which is what you want — it makes the "how big a batch fits in 16 GB" calculation trivial.</figcaption></figure>
+<h2>Same chair, different pixels</h2>
+<p>The four libraries draw the same mesh. They do not produce the same pixels. To make the gap legible I picked PyVista as the <em>anchor</em> (not as ground truth — there is no ground truth for "what does a chair look like rendered") and measured SSIM of every other library's render against it, per chair per pose:</p>
+<figure><img src="images/fidelity-heatmap.png" alt="Figure 5. SSIM versus the PyVista render of the same chair from the same pose, averaged over eight camera positions. matplotlib hovers aroun"><figcaption>Figure 5. SSIM versus the PyVista render of the same chair from the same pose, averaged over eight camera positions. matplotlib hovers around 0.75 but drops to 0.69 on the denser <code>chair_0100</code>. Open3D's Filament PBR runs 0.78 to 0.95 (mean 0.90), depending on chair complexity. nvdiffrast's hand-rolled Lambertian + anti-aliased edges actually lands closer to PyVista than Open3D does — 0.80 to 0.99, mean 0.93.</figcaption></figure>
+<p>A 0.75 SSIM is not a quality verdict on matplotlib — it's a warning. If you train a downstream encoder on matplotlib renders and ship inference on PyVista renders, your encoder sees pixels that differ by roughly 25 SSIM points on every input. Your retrieval scores will quietly degrade. The drift comes from three places: flat shading (matplotlib has no notion of per-vertex normals in <code>Poly3DCollection</code>), monochromatic ambient (no key light), and matplotlib's painter's-algorithm depth-sort, which can swap face order on dense meshes and produce z-fighting artifacts.</p>
+<p>PyVista and nvdiffrast agree more than PyVista and Open3D do, which surprised me. The reason, looking at the per-chair pixel diffs, is that Open3D's Filament adds a subtle screen-space ambient occlusion term by default; nvdiffrast (because I wrote the shader) doesn't. PyVista's VTK renderer doesn't either. nvdiffrast and PyVista end up closer because they're both doing simpler lighting.</p>
+<p>The lesson: pick <em>one</em> renderer for your training set and your eval set. Don't mix.</p>
+<h2>The camera-convention bear trap</h2>
+<p>I lost about an afternoon on this. Each library has its own answer to "which way is up":</p>
+<figure><img src="images/camera-convention-diagram.png" alt="Figure 6. Default up-axis for each library. matplotlib, Open3D, and PyVista all default to +Z up. Kaolin defaults to +Y up. nvdiffrast doesn"><figcaption>Figure 6. Default up-axis for each library. matplotlib, Open3D, and PyVista all default to +Z up. Kaolin defaults to +Y up. nvdiffrast doesn't pick — you hand it your own MVP matrix, so the convention is whatever you build into it.</figcaption></figure>
+<p>Table 2. Default camera convention by library. The "API shape" column is the bit that bites you: matplotlib and nvdiffrast have no <code>look_at(eye, target, up)</code> call at all, so the eye math you write for the other three is not portable to them without an adapter.</p>
+<div class="table-wrap"><table>
+<thead><tr>
+<th>Library</th>
+<th>Up axis</th>
+<th>Default FOV</th>
+<th>API shape</th>
+</tr></thead><tbody>
+<tr>
+<td>matplotlib</td>
+<td>+Z</td>
+<td>—</td>
+<td><code>view_init(elev, azim)</code> — no eye vector, no focal length</td>
+</tr>
+<tr>
+<td>Open3D</td>
+<td>+Z</td>
+<td>60°</td>
+<td><code>setup_camera(fov, target, eye, up)</code></td>
+</tr>
+<tr>
+<td>PyVista</td>
+<td>+Z</td>
+<td>30°</td>
+<td><code>camera_position = [eye, focal_point, view_up]</code></td>
+</tr>
+<tr>
+<td>Kaolin</td>
+<td>+Y</td>
+<td>60°</td>
+<td><code>Camera.from_args(...)</code> — swap Y and Z from the Open3D pose</td>
+</tr>
+<tr>
+<td>nvdiffrast</td>
+<td>user</td>
+<td>—</td>
+<td>no camera object — you hand it your own <code>(B, N, 4)</code> clip-space tensor</td>
+</tr>
+</tbody></table></div>
+<p>Source: data/camera-convention.csv (5 rows).</p>
+<p>For matplotlib, Open3D, and PyVista the diagram is reassuring — they all agree on +Z up, right-handed, look-at-the-centroid. The eye position you compute for one works for the other two. If you move to Kaolin, you have to remember to swap a Y and a Z, or your chairs come out sideways. (PyTorch3D has the same issue with a different convention: PyTorch3D's default world is +Y up, +X <strong>left</strong>, +Z <strong>into</strong> the screen.)</p>
+<p>nvdiffrast is the strangest of the bunch in a different way. There is no camera. You pass <code>dr.rasterize</code> a tensor of clip-space coordinates: <code>(B, N, 4)</code>. So the convention is whatever you encode into your projection and view matrices. The view matrix I used in the snippet above does standard look-at with +Z up:</p>
+<pre><code class="language-python">def _view(eye, target, up, device):
+    f = (target - eye); f /= f.norm()
+    s = torch.cross(f, up); s /= s.norm()
+    u = torch.cross(s, f)
+    M = torch.eye(4, device=device)
+    M[0, :3] = s; M[1, :3] = u; M[2, :3] = -f
+    M[0, 3] = -(s @ eye); M[1, 3] = -(u @ eye); M[2, 3] = (f @ eye)
+    return M</code></pre>
+<p>And then the perspective matrix is a standard OpenGL one, which means nvdiffrast renders with bottom-left origin instead of top-left. You'll see a chair upside down until you do <code>image = image[::-1]</code> or flip a sign in P. The first time you hit this you waste an hour. The second time, you remember the flip. That's the whole bug.</p>
+<h2>Differentiable, batched, headless — pick two</h2>
+<p>The decision is not "which renderer is best." It's "which two of those three features do I actually need":</p>
+<figure><img src="images/feature-matrix.png" alt="Figure 7. The feature matrix that determines 90% of the choice. Green is &quot;yes,&quot; red is &quot;no,&quot; yellow is &quot;kind of.&quot; Differentiable, batched, a"><figcaption>Figure 7. The feature matrix that determines 90% of the choice. Green is "yes," red is "no," yellow is "kind of." Differentiable, batched, and easy-install are the three columns that flip a renderer in or out for a given job.</figcaption></figure>
+<p>Almost every Python data scientist needs "headless" — somewhere in the stack there will be a cluster or a CI runner that doesn't have an X server. So you can read the matrix as "differentiable and batched, conditional on headless." matplotlib gives you headless and nothing else. Open3D and PyVista give you headless plus materials, no differentiability, no batching. Kaolin and nvdiffrast give you all three.</p>
+<p>Materials, easy install, CUDA — those are tiebreakers, not deciders. If you need PBR and a low install bill, Open3D wins. If you need differentiability and don't mind hand-rolling a shader, nvdiffrast wins. If you need both, you accept Kaolin's install pain (or PyTorch3D's, which is comparable).</p>
+<h2>The decision tree</h2>
+<p>For the actual choice on a Monday morning, this is the tree I follow:</p>
+<pre class="mermaid">%%{init: {'theme': 'neutral'}}%%
+flowchart TD
+    A[Pick a renderer]
+    B{Need gradients?}
+    C[nvdiffrast]
+    D{Batch &gt; 100 renders/sec?}
+    E[Kaolin or PyTorch3D]
+    F{Headless cluster?}
+    G[Open3D]
+    H{Quick debug plot?}
+    I[matplotlib]
+    J[PyVista]
+    A --> B
+    B -- yes --> C
+    B -- no --> D
+    D -- yes --> E
+    D -- no --> F
+    F -- yes --> G
+    F -- no --> H
+    H -- yes --> I
+    H -- no --> J</pre>
+<figure><img src="images/decision-tree-mermaid.png" alt="Figure 8. The Monday-morning renderer decision tree. Three yes/no questions get you to a library. Mermaid source in `images/decision-tree.mm"><figcaption>Figure 8. The Monday-morning renderer decision tree. Three yes/no questions get you to a library. Mermaid source in <code>images/decision-tree.mmd</code>; PNG fallback at <code>images/decision-tree-mermaid.png</code>.</figcaption></figure>
+<p>Walked through: gradients put you on nvdiffrast (or Kaolin/PyTorch3D if you want a higher-level API and can afford the install). No gradients but heavy batching pushes you toward CUDA-native libraries anyway. Headless without batching gives you Open3D, which is the workhorse for offline render farms. matplotlib stays in the toolbox for the case where you have a notebook open and you want to see what the mesh you just loaded actually is.</p>
+<p>Table 3 has the per-use-case recommendation:</p>
+<p>Table 3. The renderer I reach for, by job.</p>
+<div class="table-wrap"><table>
+<thead><tr>
+<th>Use case</th>
+<th>Library</th>
+<th>Why</th>
+</tr></thead><tbody>
+<tr>
+<td>Quick debug plot in a notebook</td>
+<td>matplotlib</td>
+<td>Zero install pain; same axes as your data plots.</td>
+</tr>
+<tr>
+<td>Headless batch render of 10k+ objects</td>
+<td>Open3D</td>
+<td>EGL out of the box; materials; no torch dependency.</td>
+</tr>
+<tr>
+<td>Interactive demo or stakeholder figure</td>
+<td>PyVista</td>
+<td>Polished defaults; easy camera; clean screenshots.</td>
+</tr>
+<tr>
+<td>Inverse graphics / shape from rendered loss</td>
+<td>nvdiffrast</td>
+<td>Differentiable rasterization with AA; you bring the shader.</td>
+</tr>
+<tr>
+<td><strong>Bulk multi-view rendering for embedding</strong></td>
+<td><strong>Open3D</strong></td>
+<td><strong>Best throughput per LOC at our 256x256 budget.</strong></td>
+</tr>
+</tbody></table></div>
+<p>Source: data/recommendation.csv (5 rows).</p>
+<p>The bold row is the one that matters most for the next 17 posts in this series. We're going to render ten thousand ModelNet40 objects, eight views each, and feed them into CLIP and DINOv2. That's 80,000 renders. At Open3D's 276 RPS that's about 5 minutes of wall time. At PyVista's 29 RPS it would be 46 minutes. At matplotlib's 6 RPS it would be close to four hours. The renderer choice is, in practice, the difference between waiting for coffee and going home for the day.</p>
+<h2>Reproducibility</h2>
+<p>Hardware: AWS Lightsail Tesla T4 instance, 16 GB GPU memory, 8 vCPU, 16 GB system RAM. Software (pinned in <code>code/requirements.txt</code>): Python 3.10, torch 2.11.0+cu126, open3d 0.19.0, pyvista 0.47.3, matplotlib 3.10.8, nvdiffrast 0.4.0, scikit-image, trimesh 4.11.5. Data: ModelNet40 (Wu et al. 2015, CC BY-NC), 4 chairs (<code>chair_0001</code>, <code>chair_0050</code>, <code>chair_0100</code>, <code>chair_0250</code>) from the train split. Camera: eight poses on a horizontal ring at elevation 20°, azimuth <code>[0, 45, …, 315]°</code>, distance 1.6 × unit-sphere radius. Image size: 256 x 256 PNG, white background. Throughput: single warm-cache run per (library, batch_size), seed=0 for the pose ring; matplotlib timed over 25 renders to keep wall-clock under a minute, others over 50–100. Run-to-run variance is around ±5% on this T4 — re-run the script and you'll see the second digit move; the order of magnitude won't. <code>n_renders</code> in <code>data/throughput.csv</code> is the source of truth. Numbers cited in prose come from: <code>data/throughput.csv</code> (RPS, peak memory), <code>data/fidelity-vs-pyvista.csv</code> (SSIM), <code>data/setup-loc.csv</code> (LOC counts), <code>data/camera-convention.csv</code> (up-axis defaults).</p>
+<p>Run end-to-end:</p>
+<pre><code class="language-bash">pip install -r code/requirements.txt
+# On a non-lightsail host, point the script at your ModelNet40 chair dir:
+# export MODELNET40_DIR=/path/to/ModelNet40/chair/train
+# export POST_OUT_DIR=$PWD
+python code/main.py            # ~30 s on a T4; full 4 chairs x 4 libs x 8 poses
+python code/build_visuals.py   # ~3 s; rebuilds all 8 figures from data/</code></pre>
+<h2>What's next</h2>
+<p>The choice of renderer is, in practice, a three-question quiz: gradients, batching, headless. Answer them and you stop arguing about which library looks prettiest. Post 04 uses PyVista for its 12-cell dataset gallery — that's the "interactive demo / stakeholder figure" slot from Table 3 — and then Post 05 promotes Open3D to the default once we start batched embedding. nvdiffrast comes back when we need gradients in the descriptor wave.</p>
+</main>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
+</script>
+
+<hr style="margin-top:3em;border:none;border-top:1px solid #ddd;">
+<p style="font-size:15px;color:#666;text-align:center;margin-top:1.2em;">
+  <strong>Part 3 of 20</strong> &middot;
+  <a href="../../index.html">Back to the series index</a>
+</p>
+
+</body>
+</html>

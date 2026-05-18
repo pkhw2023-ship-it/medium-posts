@@ -1,0 +1,22 @@
+%%{init: {'theme': 'neutral'}}%%
+flowchart TD
+    Q[What's your task?]
+    Q --> T[tutorial / classification baseline]
+    Q --> S[scan-noise robustness]
+    Q --> P[product image + 3D mesh]
+    Q --> M[multi-view supervision]
+    Q --> B[scale, pretraining]
+    Q --> C[CAD topology, primitives]
+    Q --> X[material textures]
+    Q --> O[6-DoF pose benchmark]
+    Q --> R[scene-level depth + geometry]
+
+    T --> MN[ModelNet40]
+    S --> SO[ScanObjectNN]
+    P --> AB[ABO]
+    M --> CO[CO3D]
+    B --> OB[Objaverse / OmniObject3D]
+    C --> AC[ABC]
+    X --> DT[DTD]
+    O --> BP[BOP-LM-O]
+    R --> HP[Hypersim / OpenRooms]

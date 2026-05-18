@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Confidence Intervals for Classifier Scores, Borrowed From Forecasting</title>
+<style>
+:root {
+  --fg: #1f2328;
+  --muted: #57606a;
+  --accent: #3a4750;
+  --code-bg: #f6f8fa;
+  --code-fg: #1f2328;
+  --inline-code-bg: #f0f0f0;
+  --zebra: #fafafa;
+  --rule: #d0d7de;
+  --red: #d62728;
+}
+html { -webkit-text-size-adjust: 100%; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: var(--fg); background: #ffffff; line-height: 1.6; font-size: 18px;
+  max-width: 720px; margin: 2em auto; padding: 0 18px;
+}
+h1 { font-size: 32px; line-height: 1.2; margin-top: 0.4em; margin-bottom: 0.6em; }
+h2 { font-size: 26px; margin-top: 2em; margin-bottom: 0.6em; line-height: 1.25; }
+h3 { font-size: 20px; margin-top: 1.5em; margin-bottom: 0.5em; line-height: 1.3; }
+p { margin: 1em 0; }
+figure { margin: 1.6em 0; padding: 0; }
+figure img, .mermaid-fig img { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+figcaption { font-size: 15px; color: var(--muted); margin-top: 0.6em; line-height: 1.45; }
+pre {
+  background: var(--code-bg); color: var(--code-fg); padding: 12px 14px; overflow-x: auto;
+  border-radius: 6px; font-size: 14px; line-height: 1.5; margin: 1em 0;
+}
+code { font-family: "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size: 0.92em; }
+p code, li code, td code, th code { background: var(--inline-code-bg); padding: 1px 4px; border-radius: 3px; }
+pre code { background: transparent; padding: 0; }
+.table-wrap { overflow-x: auto; margin: 1.2em 0; }
+table { border-collapse: collapse; width: 100%; font-size: 15px; }
+th, td { padding: 8px 10px; border-bottom: 1px solid var(--rule); text-align: left; }
+th { font-weight: 600; color: var(--accent); }
+tr:nth-child(even) { background: var(--zebra); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.caption-top { font-size: 15px; color: var(--muted); margin: 1.2em 0 0.4em; line-height: 1.45; }
+.caption-src { font-size: 13px; color: var(--muted); margin-top: 0.4em; font-style: italic; }
+.mermaid-fig { margin: 1.6em 0; }
+pre.mermaid { background: transparent; padding: 0; overflow: visible; text-align: center; }
+hr { border: none; border-top: 1px solid var(--rule); margin: 2.5em 0; }
+</style>
+</head>
+<body>
+
+<h1>Confidence Intervals for Classifier Scores, Borrowed From Forecasting</h1>
+
+<p>I ran the same chair through PointNet 50 times under random rotations and got 50 different softmax scores. Not slightly different. The lowest score for the "chair" class on that one chair was 0.003. The highest was 0.997. The mean was 0.47.</p>
+
+<p>Weather forecasters call that a predictive distribution. They generate it by running their physics model with perturbed initial conditions and treating the spread as the forecast uncertainty. Then they grade themselves on whether their 80% prediction interval actually contained the realized temperature 80% of the time.</p>
+
+<p>Vision classifiers usually skip that second step. They output one softmax per input and call it a day. This post takes the forecasting move seriously: 50 augmented views per object, treat the spread of softmax scores as a predictive distribution, build an interval around it, and ask whether the interval contains the realized score the percentage of times it claims to.</p>
+
+<p>It mostly does. It's also wrong in a specific, instructive way that no plug-in scalar score can tell you about.</p>
+
+<h2>The setup, in one paragraph</h2>
+
+<p>ModelNet40, 15 classes (the ones with the most test samples), PointNet trained with rotation augmentation (the k=64 checkpoint from the rotation-augmentation post). For each test object I generate 100 augmented variants — random SO(3) rotation, light per-point jitter, 5% point dropout. The first 50 go to interval construction. The other 50 are held out: one of them, picked deterministically, is the "ground truth" the interval is graded against. This split matters and I'll come back to it.</p>
+
+<p>That predictive distribution then feeds four interval methods I want to compare:</p>
+
+<figure>
+  <img src="images/fig-01-pipeline-mermaid.png" alt="Figure 1. Pipeline: from one test object to four interval candidates.">
+  <figcaption>Figure 1. Pipeline: from one test object to four interval candidates.</figcaption>
+</figure>
+
+<p>The augmentation interval is the cheap one: take the 50 softmax scores for the true class, sort them, return the 5th and 95th percentile for a 90% interval. Done. The bootstrap interval works on the same 50 samples but asks a different question — it resamples 200 times from those 50 predictions, takes the mean of each resample, returns the 5/95 percentiles of the bootstrap distribution of means. The deep ensemble interval ignores the augmentations and instead forwards the unperturbed point cloud through 5 separately trained PointNets (here the K∈{1, 4, 16, 64, 256} rotation-augmentation checkpoints from Post 10 — same architecture, different training conditions). This is not the textbook deep ensemble — that's 5 seeds of one recipe — it's a stronger diversity probe because the training distributions themselves differ, and the checkpoints already exist so the extra training cost is zero. Take percentiles over the 5 softmax scores. Split conformal does something else again: hold out 30% of the test set as a calibration set, compute the per-augmentation residual of each calibration object's score against its own augmentation mean, take the 1−α quantile of those residuals, then build the test interval as <code>(mean ± q̂)</code> clipped to [0, 1]. This is Post 18's conformal machinery — same (n+1)(1−α)/n quantile, same exchangeability assumption — with the class-set output replaced by a per-object score interval. The four methods compared here are all variants of "build an interval from a finite predictive sample."</p>
+
+<p>The forecasting analogy isn't a stretch. Ensemble weather forecasts perturb initial conditions; the augmentation predictive distribution perturbs object orientation. The statistical move — sample a distribution by perturbing inputs, build an interval from the spread — is the same. Conformal is the version that swaps the implicit population assumption for a finite-sample guarantee. Bootstrap is the version that asks "how confident am I about my point estimate" rather than "where is the next observation likely to land". These are different questions, and the answer to one is not the answer to the other. This is going to matter.</p>
+
+<h2>What honest grading actually requires</h2>
+
+<p>Before showing any numbers I have to say one thing that took me an embarrassing amount of debugging. If you build an interval from 50 samples and then grade yourself against the mean of those same 50 samples, you will achieve 100% coverage at every target. This is not because your method is great. It's because you measured your own ruler with itself.</p>
+
+<p>The first version of these experiments did exactly that. Every method overcovered at every target. I caught it because the bootstrap-of-the-mean, which I knew should be very narrow, was reporting 100% — that's the smell.</p>
+
+<p>The fix is to grade against an <em>independent</em> realization. Specifically: build the interval from the first 50 augmentations of each object, then grade against a single held-out augmentation (a draw from the same predictive distribution, but not in the training set for the interval). This is exactly what a forecaster does — the prediction interval is built from a model ensemble, then graded against the realized temperature, which is one draw from the population the ensemble is approximating.</p>
+
+<p>It also reframes what the interval is claiming. The augmentation interval at 90% says: "if you draw one more augmented view of this object and run it through PointNet, the score will fall in this range 90% of the time." That is a <em>predictive</em> interval, not a <em>confidence</em> interval on the mean. Bootstrap-of-the-mean answers a different question entirely.</p>
+
+<h2>The reliability diagram</h2>
+
+<p>This is the headline figure. For each target coverage on the x-axis, what fraction of test objects had their realized held-out score fall inside the interval? Perfect calibration is the y=x diagonal.</p>
+
+<figure>
+  <img src="images/fig-02-reliability-diagram.png" alt="Figure 2. Reliability of four interval methods. Diagonal is perfect calibration; each line is one method&#x27;s achieved coverage at the target on the x-axis.">
+  <figcaption>Figure 2. Reliability of four interval methods. Diagonal is perfect calibration; each line is one method's achieved coverage at the target on the x-axis.</figcaption>
+</figure>
+
+<p>Split conformal sits on the diagonal — 0.79 / 0.90 / 0.95 at targets 0.80 / 0.90 / 0.95. That's the guarantee in action: marginal coverage under exchangeability, and exchangeability is satisfied here because the held-out augmentation is generated from the same SO(3)+jitter+dropout distribution as the calibration augmentations. Augmentation tracks well at the 80% target (0.76, a touch under) and at the 90% target (0.86), but by the time you ask for 95% it returns 0.92. The interval is getting wider as α shrinks, just not fast enough. Empirical percentiles of 50 samples can't reliably estimate the tail of the predictive distribution; the 2.5th percentile of 50 samples is a noisy thing.</p>
+
+<p>Bootstrap is on the floor — 17% coverage at the 95% target. That's not a bug. Bootstrap-of-the-mean asks "where is the mean of the predictive distribution" and answers with an interval of width about 0.08. The held-out single draw has the spread of the <em>full</em> predictive distribution, which is about 0.4 wide. Of course it falls outside the bootstrap-of-the-mean interval more often than not. The bootstrap interval is technically correct for the question it's answering. It is also entirely the wrong tool for grading whether a single new prediction is plausible. The 5-member ensemble lands under augmentation across the range — five points are too few to estimate tail percentiles, and the interval is wider on average (median 0.76 at the 90% target, vs. 0.54 for augmentation) but the percentile estimates are noisy, so coverage suffers anyway. Five members is what most published deep ensembles use; we live with it.</p>
+
+<h2>What this looks like for one specific object</h2>
+
+<p>Reading reliability diagrams is dry. Here's what's happening for one randomly chosen test object — a 50-augmentation distribution, plus each method's [lo, hi] interval drawn on top:</p>
+
+<figure>
+  <img src="images/fig-03-worked-example.png" alt="Figure 3. One test object. Bars are the 50 augmented true-class scores, sorted. Horizontal bands are each method&#x27;s 90% interval. The augmentation interval covers almost everything; conformal trims to ">
+  <figcaption>Figure 3. One test object. Bars are the 50 augmented true-class scores, sorted. Horizontal bands are each method's 90% interval. The augmentation interval covers almost everything; conformal trims to a tighter band; bootstrap is a sliver around the mean.</figcaption>
+</figure>
+
+<p>This object has a mean true-class score of 0.47 — the model is uncertain about it. The augmentation interval at 90% is [0.00, 0.99]. That's nearly the whole [0, 1] range, but it correctly reflects that the predictive distribution is bimodal: some rotations get the model to high confidence, some don't. The conformal interval is [0.08, 0.86], a tighter band around the mean with the guarantee carrying the slack. The bootstrap interval is [0.38, 0.55] — a clean confidence band on the mean, useless for "where will the next prediction land."</p>
+
+<p>The takeaway here is not which interval is "right." It's that the question shapes the interval. If you're going to threshold downstream on a single score, you want augmentation or conformal. If you want to report the model's average confidence, bootstrap is fine. They are not interchangeable.</p>
+
+<h2>Width is the price of guarantee</h2>
+
+<p>Coverage isn't free. Tighter intervals have lower coverage; wider intervals have more. What does "wider" cost you?</p>
+
+<figure>
+  <img src="images/fig-04-interval-width-bars.png" alt="Figure 4. Mean interval width per method per target. Ensemble is widest; bootstrap is narrowest; augmentation and conformal land between.">
+  <figcaption>Figure 4. Mean interval width per method per target. Ensemble is widest; bootstrap is narrowest; augmentation and conformal land between.</figcaption>
+</figure>
+
+<p>At the 90% target, median widths are: augmentation 0.54, conformal 0.58, ensemble 0.76, bootstrap 0.08. Conformal pays for its guarantee with intervals about 8% wider than augmentation. Ensemble pays a 41% premium and <em>still</em> undercovers — five members is just too noisy a tail estimator. Bootstrap is narrow because, again, it's measuring something else.</p>
+
+<p>The interesting number here is conformal vs. augmentation. If you can spend the calibration set (30% of the test pool in this experiment) you get marginal coverage at the cost of ~8% wider intervals. If you can't, augmentation is 8% tighter and undercovers by 3–4 percentage points at the 90% target. That's a fair trade depending on whether the downstream system can tolerate the slack.</p>
+
+<h2>Per-class: same classes break for every method</h2>
+
+<p>The reliability numbers are averages. Some classes are harder than others, and any plug-in coverage estimate hides that.</p>
+
+<figure>
+  <img src="images/fig-05-per-class-coverage.png" alt="Figure 5. Per-class coverage at 90% target, four methods. Cell shading is achieved coverage; viridis colormap. Cells under 0.78 are labeled in white; the rows where most methods struggle cluster on th">
+  <figcaption>Figure 5. Per-class coverage at 90% target, four methods. Cell shading is achieved coverage; viridis colormap. Cells under 0.78 are labeled in white; the rows where most methods struggle cluster on the same classes (bed, bookshelf, mantel, toilet).</figcaption>
+</figure>
+
+<p>The per-class story is more aligned across methods than you'd hope. Bed, bookshelf, mantel, and toilet show up below target for augmentation, ensemble, and conformal — all three. Bed is the most striking: augmentation 0.88, ensemble 0.74, conformal 0.65 — below target for everyone, badly so for conformal. The hard classes are hard for <em>all</em> coverage methods, which means whatever is going wrong in the predictive distribution for these classes is structural, not a flaw of any specific interval construction.</p>
+
+<p>This is a known pathology of marginal-coverage methods. Conformal guarantees coverage averaged over the test population, but says nothing about coverage on a slice. If 5% of your downstream use cases are mantels and you need to make a guarantee per-class, you'd want a class-conditional conformal variant — at the cost of N-times more calibration data.</p>
+
+<h2>How many augmentations do you need?</h2>
+
+<p>The augmentation interval has one practical knob: how many samples to draw per object. More samples mean a better empirical CDF and (eventually) better tail estimation. They also cost forward passes.</p>
+
+<figure>
+  <img src="images/fig-06-sample-size-curve.png" alt="Figure 6. Sample-size ablation. Coverage at 90% target as a function of augmentation count (left axis, charcoal); mean interval width (right axis, orange).">
+  <figcaption>Figure 6. Sample-size ablation. Coverage at 90% target as a function of augmentation count (left axis, charcoal); mean interval width (right axis, orange).</figcaption>
+</figure>
+
+<p>Coverage climbs from 0.59 at n=5 to 0.86 at n=50 — and is still climbing. Width grows monotonically too, because more samples find more outliers. The curve hasn't flattened by n=50, which is the unflattering thing the data shows: even at 50 augmentations the percentile interval is undercovering by 4 points at the 90% target.</p>
+
+<p>If I were tuning this for a deployment, I'd run the curve past 50 and find the inflection — somewhere around n=100–200 the empirical percentile should be stable enough that the interval matches its target. But the practical message is: 50 is what most people pick by default, and 50 leaves you a few points short. Either go higher, or layer conformal on top to absorb the gap.</p>
+
+<h2>Tail coverage doesn't concentrate where I expected</h2>
+
+<p>I had a theory going in: the augmentation interval undercovers worst when the model is <em>uncertain</em>, because the predictive distribution is wider there and 50 percentiles can't catch the tails. The binned figure says I was approximately wrong.</p>
+
+<figure>
+  <img src="images/fig-07-tail-undercoverage.png" alt="Figure 7. Per-bin 90% coverage as a function of true-class point estimate. Coverage hovers near 0.85 across the full confidence range; no obvious U-shape or tail collapse.">
+  <figcaption>Figure 7. Per-bin 90% coverage as a function of true-class point estimate. Coverage hovers near 0.85 across the full confidence range; no obvious U-shape or tail collapse.</figcaption>
+</figure>
+
+<p>The undercoverage is roughly uniform across confidence bins, around 0.82–0.88 everywhere. The low-confidence bins (point estimate &lt; 0.5) are no worse than the high-confidence bins. So the augmentation interval isn't broken specifically on uncertain cases — it's slightly miscalibrated everywhere. That's actually a better diagnosis: the fix is more samples (or conformal), not a heuristic for which objects to flag.</p>
+
+<p>The 4-point undercoverage is structural in 50-sample percentile estimation. It's not a property of the model. It would persist if I swapped PointNet for a transformer.</p>
+
+<h2>What predictive distributions actually look like</h2>
+
+<p>A reminder of what the model is being shown. Each row is one test object; the first column is the canonical orientation, the next four are augmented variants the model also classifies:</p>
+
+<figure>
+  <img src="images/fig-08-aug-distribution-gallery.png" alt="Figure 8. Four objects × five views. The classifier sees a substantially different point cloud each time; the spread of softmax scores reflects that.">
+  <figcaption>Figure 8. Four objects × five views. The classifier sees a substantially different point cloud each time; the spread of softmax scores reflects that.</figcaption>
+</figure>
+
+<p>This is not adversarial noise. These are reasonable views of the same object under reasonable real-world transformations. Any deployment of this classifier will see inputs like these — different camera angles, slight scan noise, dropped points. The variance in the output is real variance in the world, not a quirk of the augmentation choices.</p>
+
+<h2>Recommendation table</h2>
+
+<p>The full comparison at the 90% target.</p>
+
+<p class="caption-top">Table 1. Comparison of four interval methods at the 90% coverage target. Recommended row (conformal) in bold.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Method</th>
+      <th>Coverage @ 90%</th>
+      <th>Median width</th>
+      <th>Worst-class coverage</th>
+      <th>Cost per object</th>
+      <th>Use when</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>augmentation</td>
+      <td>0.86</td>
+      <td>0.54</td>
+      <td>0.79</td>
+      <td>50 forwards</td>
+      <td>default; cheap, competitive</td>
+    </tr>
+    <tr>
+      <td>bootstrap</td>
+      <td>0.15</td>
+      <td>0.08</td>
+      <td>0.03</td>
+      <td>50 forwards + 200 means</td>
+      <td>you want a CI on the mean, not a prediction interval</td>
+    </tr>
+    <tr>
+      <td>ensemble (5×)</td>
+      <td>0.81</td>
+      <td>0.76</td>
+      <td>0.60</td>
+      <td>5 forwards (different models)</td>
+      <td>you have multiple trained models anyway</td>
+    </tr>
+    <tr>
+      <td><strong>conformal</strong></td>
+      <td><strong>0.90</strong></td>
+      <td><strong>0.58</strong></td>
+      <td><strong>0.65</strong></td>
+      <td>50 forwards + 1 mean + calibration set</td>
+      <td>you need a marginal-coverage guarantee</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Bold is the recommended row when you need a coverage guarantee. If you don't — if a few points of undercoverage is acceptable — augmentation is cheaper and you skip the calibration set entirely. The thing not to do is grade bootstrap-of-the-mean intervals against single new predictions: they answer a different question (where is the mean), and applying them to predictive coverage will look like a method failure when it's a category error.</p>
+
+<p>*Source: <code>data/coverage-by-method.csv</code>, <code>data/width-by-method.csv</code>, <code>data/per-class-coverage.csv</code>.*</p>
+
+<h2>What I'd build next</h2>
+
+<p>The augmentation interval undercovers structurally. Conformal closes the gap but uses a calibration set you don't always have. The natural next move is a <em>conformalized augmentation interval</em>: use the augmentation percentiles as the prediction, then conformalize the residual on a small calibration set to absorb the 3–4 point gap. That should give you near-conformal coverage at near-augmentation width, with the calibration set only needing to be a few hundred objects. I haven't run it. If you do, let me know what coverage you get at the 95% target — that's where the empirical-percentile estimator runs out of samples and conformal earns its keep.</p>
+
+<p>The other obvious extension is <em>class-conditional</em> conformal — separate calibration per class — for cases where the per-class coverage gap (bed conformal sitting at 0.65 while airplane sits at 1.00) matters. Same idea, more bookkeeping.</p>
+
+<p>The forecasting analogy I opened with isn't just rhetorical. Forecasters have been building and grading prediction intervals against realized observations for decades; the literature on calibration, reliability, and probabilistic scoring rules is mature. Vision people who want to start outputting intervals — for thresholds, for downstream decisions, for honest customer-facing uncertainty — have a thirty-year head-start to crib from. The hard part isn't the math. It's deciding that one number per prediction is no longer enough.</p>
+
+<p>---</p>
+
+<p>*Datasets: ModelNet40 (Wu et al. 2015, CC BY-NC) — Princeton CAD database, OFF format. PointNet checkpoints reused from Post 10; the K-rotation-pool ensemble (K ∈ {1, 4, 16, 64, 256}) is the same set of checkpoints from that post. Pinned versions: torch 2.11.0+cu126, numpy 2.2.6, scipy 1.15.3, scikit-learn 1.7.2, trimesh 4.11.5. Hardware: <code>lightsail-shapenet</code> (Tesla T4, 16 GB, CUDA 12.6), conda env <code>3d-dedup</code>. Full pipeline: ~3 minutes wall-clock (50-aug forward pass dominates). Code: <code>posts/19-forecast-confidence-intervals-vision/code/</code>.*</p>
+
+<p><em>Post 20 closes the series by profiling a real million-image scoring job and finding that the JPEG decoder, not the GPU, is the load-bearing optimization — the operational counterpart to the calibration story this post made for the model's confidence.</em></p>
+
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
+</script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism.min.css">
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+
+
+<hr style="margin-top:3em;border:none;border-top:1px solid #ddd;">
+<p style="font-size:15px;color:#666;text-align:center;margin-top:1.2em;">
+  <strong>Part 19 of 20</strong> &middot;
+  <a href="../../index.html">Back to the series index</a>
+</p>
+
+</body>
+</html>

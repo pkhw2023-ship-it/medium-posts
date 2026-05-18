@@ -1,0 +1,13 @@
+%%{init: {'theme': 'neutral'}}%%
+flowchart LR
+    M[ModelNet40 meshes]
+    P[apply perturbation]
+    R[render 8 views]
+    E[encode CLIP/DINOv2/PointNet]
+    N[L2-normalise]
+    PR[build pos/neg pairs]
+    S[sweep thresholds]
+    C[choose at precision target]
+    B[re-test on base-rate-shifted set]
+    M --> P --> R --> E --> N --> PR --> S --> C --> B
+    B -.-> S

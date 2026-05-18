@@ -1,0 +1,10 @@
+%%{init: {'theme': 'neutral'}}%%
+flowchart LR
+    M[3D mesh] -- rasterize --> R[render 8 views]
+    R -- 224x224 images --> E[image encoder]
+    E -- pooler out --> V[per-view vectors]
+    V -- stack and reduce --> P[pool: mean / max / attn]
+    P -- L2 normalize --> O[one vector per object]
+    O -- insert --> I[FAISS index]
+    Q[query mesh] -- same path --> R
+    I -- search --> N[top-k nearest objects]

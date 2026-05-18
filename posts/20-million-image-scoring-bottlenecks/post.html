@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where the Million-Image Score Job Actually Spends Its Time</title>
+<style>
+:root {
+  --fg: #1f2328;
+  --muted: #57606a;
+  --accent: #3a4750;
+  --code-bg: #f6f8fa;
+  --code-fg: #1f2328;
+  --inline-code-bg: #f0f0f0;
+  --zebra: #fafafa;
+  --rule: #d0d7de;
+  --red: #d62728;
+}
+html { -webkit-text-size-adjust: 100%; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: var(--fg); background: #ffffff; line-height: 1.6; font-size: 18px;
+  max-width: 720px; margin: 2em auto; padding: 0 18px;
+}
+h1 { font-size: 32px; line-height: 1.2; margin-top: 0.4em; margin-bottom: 0.6em; }
+h2 { font-size: 26px; margin-top: 2em; margin-bottom: 0.6em; line-height: 1.25; }
+h3 { font-size: 20px; margin-top: 1.5em; margin-bottom: 0.5em; line-height: 1.3; }
+p { margin: 1em 0; }
+figure { margin: 1.6em 0; padding: 0; }
+figure img, .mermaid-fig img { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+figcaption { font-size: 15px; color: var(--muted); margin-top: 0.6em; line-height: 1.45; }
+pre {
+  background: var(--code-bg); color: var(--code-fg); padding: 12px 14px; overflow-x: auto;
+  border-radius: 6px; font-size: 14px; line-height: 1.5; margin: 1em 0;
+}
+code { font-family: "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size: 0.92em; }
+p code, li code, td code, th code { background: var(--inline-code-bg); padding: 1px 4px; border-radius: 3px; }
+pre code { background: transparent; padding: 0; }
+.table-wrap { overflow-x: auto; margin: 1.2em 0; }
+table { border-collapse: collapse; width: 100%; font-size: 15px; }
+th, td { padding: 8px 10px; border-bottom: 1px solid var(--rule); text-align: left; vertical-align: top; }
+th { font-weight: 600; color: var(--accent); }
+tr:nth-child(even) { background: var(--zebra); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.caption-top { font-size: 15px; color: var(--muted); margin: 1.2em 0 0.4em; line-height: 1.45; }
+.caption-src { font-size: 13px; color: var(--muted); margin-top: 0.4em; font-style: italic; }
+hr { border: none; border-top: 1px solid var(--rule); margin: 2.5em 0; }
+</style>
+</head>
+<body>
+
+<h1>Where the Million-Image Score Job Actually Spends Its Time</h1>
+
+<p>I assumed the GPU was the bottleneck. The profiler said otherwise.</p>
+<p>A scoring job on 100,000 product photos ran in 596 seconds on a Tesla T4 with the default PyTorch dataloader, PIL for JPEG decode, batch size 32, four workers. I spent the first hour tuning batch size from 32 down to 16 and up to 256. Throughput barely moved. I tried more workers. Barely moved. Then I switched the JPEG decoder from PIL to libjpeg-turbo, the resizer from PIL to OpenCV, the inference dtype to FP16, and pushed batch to 64 — and the same 100,000 images ran in 102 seconds. <strong>5.88x faster</strong>. The GPU never changed.</p>
+<p>This is the last post in a 20-post arc. We started by loading a mesh without producing a blank render. We end by scoring a corpus of real images and measuring exactly where the wall clock disappears. The answer turns out to depend on something most posts never mention: how big are your images.</p>
+<h2>The profiling setup</h2>
+<p>Three tools, one script:</p>
+<pre><code class="language-python">class StageProfiler:
+    def __init__(self):
+        self.totals = defaultdict(float)
+        self.counts = defaultdict(int)
+
+    @contextlib.contextmanager
+    def stage(self, name, count=1):
+        t0 = time.perf_counter()
+        try:
+            yield
+        finally:
+            self.totals[name] += time.perf_counter() - t0
+            self.counts[name] += count
+</code></pre>
+<p>Forty lines, no dependencies. Wrap every pipeline step in <code>with prof.stage("decode"):</code> and the per-stage wall clock is yours. I cross-checked against <code>torch.profiler</code> and <code>cProfile</code> and they agree within 2% — the wrappers add ~200 ns per call, invisible at these time scales.</p>
+<p><code>num_workers=0</code> matters most for the profile. Workers &gt; 0 hide CPU work behind GPU work — great for production, ruinous for a profile. I ran the headline decomposition serially, then ran throughput numbers with workers=4 to match production.</p>
+<h2>Setup</h2>
+<p>Hardware: one Tesla T4, one 16-core Intel x86 box (<code>lightsail-shapenet</code>), conda env <code>3d-dedup</code>. Model: DINOv2-S (HuggingFace <code>facebook/dinov2-small</code>, 384-dim, 22M params) — same downgrade Post 15 made: fast cycles on the throughput experiment matter more than the extra dimensionality of DINOv2-base. Data: 100,000 Amazon Berkeley Objects product photos sampled from <code>s3://amazon-berkeley-objects/</code> (CC-BY-4.0). Two image sizes: small (256x256, median 7.4 KB) and original-resolution (median 305 KB, mostly ~1000x1000).</p>
+<p>The first thing I learned, before any tuning, is that the question "where does the time go" has two completely different answers depending on which image size you point the pipeline at.</p>
+<h2>Small images: forward dominates</h2>
+<pre><code class="language-python">with prof.stage(&quot;read&quot;):    buf = open(path, &quot;rb&quot;).read()
+with prof.stage(&quot;decode&quot;):  arr = decode_pil(buf)
+with prof.stage(&quot;resize&quot;):  arr = resize_pil(arr, 224)
+with prof.stage(&quot;normalize&quot;): x = normalize(arr)
+with prof.stage(&quot;forward&quot;): vec = model(tensor.to(&quot;cuda&quot;))
+</code></pre>
+<p>On 256x256 thumbnails, run 10,000 images through that loop with PIL decode and PIL resize. Project the per-image times to 100K-image equivalents and you get this:</p>
+<figure>
+  <img src="images/fig-01-stacked-stage-time.png" alt="Figure 1. Per-stage wall-clock seconds for 100K small ABO product images, three decoder libraries side-by-side and the realistic four-worker baseline on the right. GPU forward (green) is 60-70% of the bar in the three serial runs because the images are small and the JPEG payload is tiny. The four-worker baseline column is mostly green because workers hide everything else behind the GPU — but they only do that successfully when the per-image work is small enough for the workers to keep up." />
+  <figcaption>Figure 1. Per-stage wall-clock seconds for 100K small ABO product images, three decoder libraries side-by-side and the realistic four-worker baseline on the right. GPU forward (green) is 60-70% of the bar in the three serial runs because the images are small and the JPEG payload is tiny. The four-worker baseline column is mostly green because workers hide everything else behind the GPU — but they only do that successfully when the per-image work is small enough for the workers to keep up.</figcaption>
+</figure>
+<p>Forward is 58% of the PIL bar. Decode is 8%. Resize is 15%. Normalize is 13%. The GPU is honestly the dominant cost on small images, which is the configuration almost every ML tutorial benchmarks. Swap PIL for OpenCV and the bar shrinks from 588 to 493 seconds — the decode and resize columns nearly vanish. Swap to libjpeg-turbo and the bar barely changes from OpenCV. Most of the win came from the resize fix (PIL's <code>Image.resize</code> is roughly 6x slower than OpenCV's <code>cv2.resize</code> for this kind of work).</p>
+<p>The serial-with-PIL run lands at 170 img/s. The realistic four-worker run lands at 168 img/s. They match because four CPU workers are already enough to keep PIL fed at 256x256 — the GPU is the constraint, the rest is hidden. This is the "tune the batch size" story everyone tells.</p>
+<p>That story is wrong for production product photos.</p>
+<h2>Original-resolution images: decode and resize dominate</h2>
+<p>Repeat the experiment on the full-resolution <code>images/original/</code> shards. Same model, same code path, same disk, only the JPEG payloads change.</p>
+<figure>
+  <img src="images/fig-01b-stacked-stage-time-original.png" alt="Figure 2. Same per-stage decomposition, this time on 100K full-resolution product images (scaled from a 5K-image run). PIL JPEG decode plus PIL resize together eat 90% of the wall clock. Forward (green, top) is about 8%. Switch to libjpeg-turbo and OpenCV resize and the bar shrinks from 5,021 seconds to 1,466 seconds. The decoder swap matters more than the GPU does." />
+  <figcaption>Figure 2. Same per-stage decomposition, this time on 100K full-resolution product images (scaled from a 5K-image run). PIL JPEG decode plus PIL resize together eat 90% of the wall clock. Forward (green, top) is about 8%. Switch to libjpeg-turbo and OpenCV resize and the bar shrinks from 5,021 seconds to 1,466 seconds. The decoder swap matters more than the GPU does.</figcaption>
+</figure>
+<p>PIL decode: 51% of wall. PIL resize: 38% of wall. Forward: 8%. The GPU is starved 92% of the time. Upgrading the T4 to an A100 is capped at the same 8% as long as Pillow stays in the pipeline — the A100 would sit idle waiting for the next batch. This is the failure mode the small-image benchmarks hide.</p>
+<p>The fix is the same library swap, applied per-image:</p>
+<pre><code class="language-python">from turbojpeg import TurboJPEG
+tj = TurboJPEG()                     # libjpeg-turbo, hardware SIMD
+def decode_turbojpeg(buf): return tj.decode(buf, pixel_format=TJPF_RGB)
+
+import cv2
+def resize_opencv(arr, size):        # bilinear, SIMD
+    return cv2.resize(arr, (size, size), interpolation=cv2.INTER_LINEAR)
+</code></pre>
+<p>Two libraries, both pip-installable. PyTurboJPEG needs the system <code>libturbojpeg0-dev</code> package (and version &gt;= 3.0 for PyTurboJPEG 2.x — many distros still ship 2.x, which took me an afternoon to figure out). With both substitutions the wall clock for 100K full-res images drops from 5,021 to 1,466 seconds — <strong>3.4x faster</strong>, all CPU-side library choice, none from the GPU.</p>
+<h2>The decoder bench in isolation</h2>
+<p>Strip the pipeline down to one operation: read a JPEG buffer, return a numpy array. Time 2,000 buffers, three decoders, two image sizes.</p>
+<figure>
+  <img src="images/fig-03-decoder-comparison.png" alt="Figure 3. JPEG decode time per library, two image sizes. Black error bars span p50-to-p90. On full-resolution product photos, libjpeg-turbo decodes in 10.2 ms per image versus Pillow's 24.8 ms — a 2.4x speedup that compounds across the whole job. On 256x256 thumbnails the gap is similar in ratio (2.1x) but the absolute numbers are 0.23 ms vs 0.46 ms, which is why the small-image headline figure barely notices the swap." />
+  <figcaption>Figure 3. JPEG decode time per library, two image sizes. Black error bars span p50-to-p90. On full-resolution product photos, libjpeg-turbo decodes in 10.2 ms per image versus Pillow's 24.8 ms — a 2.4x speedup that compounds across the whole job. On 256x256 thumbnails the gap is similar in ratio (2.1x) but the absolute numbers are 0.23 ms vs 0.46 ms, which is why the small-image headline figure barely notices the swap.</figcaption>
+</figure>
+<p>The gap holds across image sizes (PIL is 2x slower per image on both) but the slope is what matters: on 7 KB thumbnails, decoder choice costs 0.2 ms per image. On 300 KB originals it costs 14 ms per image. For a million-image job the difference is 56 minutes versus 14 minutes spent just on decode. Same model, same hardware.</p>
+<p>OpenCV is consistently the middle-of-the-pack option. It's a single <code>cv2.imdecode(arr, cv2.IMREAD_COLOR)</code> call, no library install needed beyond the wheel. If you cannot get libjpeg-turbo onto your host (Conda-Forge has the library, but PyTurboJPEG needs version &gt;= 3.0 and many distros still ship 2.x — that took me an afternoon to figure out), OpenCV is the second-best option and is roughly 1.9x faster than Pillow.</p>
+<h2>The batch-size knob, and why bigger isn't better</h2>
+<p>Once decode is the bottleneck, no amount of batch tuning helps. With the PIL decoder still in place, I swept batch ∈ {1, 8, 16, 32, 64, 128, 256} on the same 20,000-image subset.</p>
+<figure>
+  <img src="images/fig-02-batch-sweep.png" alt="Figure 4. Throughput plateaus at batch 16-32 and barely moves through batch 256. Peak GPU memory rises with the square of batch size (right axis), so the cost of growing batch is real even when the benefit is zero. The plateau happens because the DataLoader workers can't decode JPEGs fast enough to keep batches arriving — the GPU finishes its forward and waits." />
+  <figcaption>Figure 4. Throughput plateaus at batch 16-32 and barely moves through batch 256. Peak GPU memory rises with the square of batch size (right axis), so the cost of growing batch is real even when the benefit is zero. The plateau happens because the DataLoader workers can't decode JPEGs fast enough to keep batches arriving — the GPU finishes its forward and waits.</figcaption>
+</figure>
+<p>Batch 1: 71 img/s. Batch 8: 151 img/s. Batch 32: 165 img/s. Batch 256: 169 img/s. The marginal benefit between batch 32 and batch 256 is 2.5%. Memory grows from 0.29 GiB to 1.65 GiB — a 5.7x memory blow-up for a 2.5% throughput gain. "Crank batch size until you run out of memory" is a training leftover; for inference on a starved decode pipeline, the plateau is real.</p>
+<p>The takeaway from the sweep is not "use batch 256." It's "your batch is past saturation; if you want more throughput, the work is upstream."</p>
+<h2>Workers help, until they don't</h2>
+<p>Once libjpeg-turbo is in place, the decode work per CPU thread drops by 2x, and now the question is how many workers it takes to keep the GPU full.</p>
+<figure>
+  <img src="images/fig-04-workers-sweep.png" alt="Figure 5. Throughput vs DataLoader workers (libjpeg-turbo, batch 64, T4). Workers=0 is the single-threaded floor at 185 img/s. Workers=2 jumps to 262 img/s. Workers=4, 8, 16 are all within 2% of 260. Two workers is enough — past that, the GPU is the constraint again and additional workers just add scheduling overhead." />
+  <figcaption>Figure 5. Throughput vs DataLoader workers (libjpeg-turbo, batch 64, T4). Workers=0 is the single-threaded floor at 185 img/s. Workers=2 jumps to 262 img/s. Workers=4, 8, 16 are all within 2% of 260. Two workers is enough — past that, the GPU is the constraint again and additional workers just add scheduling overhead.</figcaption>
+</figure>
+<p>The 2-worker number is the interesting one. With PIL decode I had needed four workers to come close to saturating the GPU. With turbojpeg I need two — the per-image decode cost shrank, the CPU threads needed to keep up shrank in proportion. The post-plateau slope is flat to slightly negative; the default <code>num_workers=4</code> is fine for most jobs, and the sweep takes 5 minutes if you want to tune.</p>
+<h2>FP16 is the second big lever</h2>
+<p>The remaining 90% of the bar in Figure 3 is forward. After fixing decode and resize, the forward stage is the next thing worth attacking. The cheapest way to halve forward time on a T4 is to halve the dtype.</p>
+<figure>
+  <img src="images/fig-05-onnx-vs-pytorch.png" alt="Figure 6. Per-batch forward latency at batch 64 for three runtimes. PyTorch FP32 is 242 ms per batch (264 img/s of pure forward throughput). PyTorch FP16 is 64 ms (1006 img/s) — a 3.8x speedup that matches what you would expect on a T4's mixed-precision pipeline. ONNX FP16 via the CUDA execution provider runs 148 ms per batch (432 img/s), 2.3x slower than PyTorch FP16 on the same hardware. Surprising: the conventional &quot;export to ONNX for serving&quot; advice is the wrong default on T4 with a small vision model." />
+  <figcaption>Figure 6. Per-batch forward latency at batch 64 for three runtimes. PyTorch FP32 is 242 ms per batch (264 img/s of pure forward throughput). PyTorch FP16 is 64 ms (1006 img/s) — a 3.8x speedup that matches what you would expect on a T4's mixed-precision pipeline. ONNX FP16 via the CUDA execution provider runs 148 ms per batch (432 img/s), 2.3x slower than PyTorch FP16 on the same hardware. Surprising: the conventional &quot;export to ONNX for serving&quot; advice is the wrong default on T4 with a small vision model.</figcaption>
+</figure>
+<p>I'd been told for years that ONNX Runtime would be faster than PyTorch on inference. For DINOv2-S on T4 with batch 64, it isn't, by a wide margin. My best guess is that PyTorch's CUDA kernels outperform onnxruntime's CUDA EP here because the model is small enough that kernel launch overhead dominates the forward, not matmul throughput. For bigger models with matmul-dominated forward, ONNX may still win. For a 22M-parameter ViT at batch 64 on T4, it doesn't.</p>
+<p>I did not benchmark TensorRT, which is where ONNX gets its real wins on T4. The point isn't that ONNX is bad — it's that the off-the-shelf "ONNX FP16 via CUDA EP" path is slower than <code>model.half()</code>. Measure before you commit to the conversion.</p>
+<h2>Serialization and disk write are basically free</h2>
+<p>Once the model emits a 384-dim float32 vector per image, writing 100K of them is a non-event:</p>
+<p><strong>Table 1. Serialization throughput for 50K 384-dim float32 vectors.</strong></p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Format</th>
+<th>Wall clock for 100K vectors (s)</th>
+<th>Throughput (img/s)</th>
+<th>On-disk size (MiB)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>parquet (chunked, snappy)</td>
+<td>0.97</td>
+<td>51,371</td>
+<td>81.3</td>
+</tr>
+<tr>
+<td>LMDB</td>
+<td>0.52</td>
+<td>95,893</td>
+<td>(sparse)</td>
+</tr>
+<tr>
+<td>.npy append</td>
+<td>0.09</td>
+<td>586,934</td>
+<td>73.2</td>
+</tr>
+</tbody>
+</table></div>
+<p>Source: <code>data/serialization-comparison.csv</code> (50K rows × 384 dim each).</p>
+<p>Even the slow option (parquet) runs three orders of magnitude faster than the rest of the pipeline. Pick whichever format your downstream wants — parquet for Spark/DuckDB readers, LMDB for serving-time key-value lookup, npy for the simplest round-trip — and the choice does not move total job time.</p>
+<h2>The CPU/GPU timeline tells the story</h2>
+<p>The cleanest way to see the GPU-starvation problem is to scale the measured per-stage costs into a simulated wall-clock timeline. Each red bar is a CPU worker producing a batch; each green bar is the GPU running forward on that batch.</p>
+<figure>
+  <img src="images/fig-06-cpu-gpu-timeline.png" alt="Figure 7. Top: the baseline (Pillow decode, four workers, batch 32). CPU bars stretch wide because PIL decode is slow, and the GPU's green forward bars finish quickly and then sit idle waiting. Bottom: the optimized configuration (libjpeg-turbo, eight workers, batch 64). The CPU bars are short enough that the GPU's forward keeps running back-to-back with no idle gaps. Same hardware, same model, different libraries." />
+  <figcaption>Figure 7. Top: the baseline (Pillow decode, four workers, batch 32). CPU bars stretch wide because PIL decode is slow, and the GPU's green forward bars finish quickly and then sit idle waiting. Bottom: the optimized configuration (libjpeg-turbo, eight workers, batch 64). The CPU bars are short enough that the GPU's forward keeps running back-to-back with no idle gaps. Same hardware, same model, different libraries.</figcaption>
+</figure>
+<p>This is what <code>nvidia-smi</code>'s 30-40% utilization is trying to tell you during a scoring job. The GPU is willing to do more, it's just not getting fed. Once the CPU can produce batches as fast as the GPU consumes them, utilization climbs into the 90s and throughput hits whatever the forward-time floor is.</p>
+<h2>The pipeline as a graph</h2>
+<figure>
+  <img src="images/fig-07-pipeline-mermaid.png" alt="Figure 8. The pipeline as a flowchart with each stage labeled with its share of wall clock on the baseline (PIL, full-resolution images). The two orange boxes (decode 51%, resize 38%) are the bottleneck. Everything else combined — read, normalize, batch-assemble, both copies, forward, and serialize — is the remaining 11%. The shape of the bottleneck shifts as you fix each stage. After the decoder swap, the green GPU forward becomes the dominant frame, and the next lever is FP16." />
+  <figcaption>Figure 8. The pipeline as a flowchart with each stage labeled with its share of wall clock on the baseline (PIL, full-resolution images). The two orange boxes (decode 51%, resize 38%) are the bottleneck. Everything else combined — read, normalize, batch-assemble, both copies, forward, and serialize — is the remaining 11%. The shape of the bottleneck shifts as you fix each stage. After the decoder swap, the green GPU forward becomes the dominant frame, and the next lever is FP16.</figcaption>
+</figure>
+<p>The mermaid source is at <code>images/fig-07-pipeline-mermaid.mmd</code>; render it with the standard <code>mmdc</code> CLI if you want a sharper version than this PNG.</p>
+<h2>Combining the wins</h2>
+<p>Order matters. Decode is the constraint, so fix decode first — switching to FP16 before fixing decode just makes the GPU finish faster and wait longer per batch. Right order: decode/resize → workers → batch → FP16. Stack the fixes that way and re-measure on 100K:</p>
+<p><strong>Table 2. End-to-end throughput, baseline vs all-wins-combined vs CPU floor.</strong></p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Configuration</th>
+<th>Throughput (img/s)</th>
+<th>Wall clock for 100K (s)</th>
+<th>Extrapolated for 1M (min)</th>
+<th>Speedup over baseline</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>T4 baseline (Pillow + 4 workers + batch 32, FP32, parquet)</td>
+<td>168</td>
+<td>595</td>
+<td>~99</td>
+<td>1.0x</td>
+</tr>
+<tr>
+<td>All wins combined: turbojpeg + 8 workers + batch 64 + FP16 + parquet</td>
+<td><strong>988</strong></td>
+<td><strong>102</strong></td>
+<td><strong>~17</strong></td>
+<td><strong>5.88x</strong></td>
+</tr>
+<tr>
+<td>CPU baseline (single thread, no batching)</td>
+<td>1.3</td>
+<td>—</td>
+<td>(~13,000)</td>
+<td>0.008x</td>
+</tr>
+</tbody>
+</table></div>
+<p>Source: <code>data/t4-baseline-stages.csv</code>, <code>data/optimized-end-to-end.csv</code>, <code>data/cpu-baseline-stages.csv</code>. I dropped the per-step intermediate rows that earlier drafts had — their numbers were estimated from the sub-benchmarks rather than measured end-to-end, and that's the kind of half-real number a careful reader rightly distrusts. CPU baseline is for scale: single-threaded CPU scoring extrapolates to ~13,000 minutes — nine days — for a million images, one of the stronger arguments for owning a T4.</p>
+<figure>
+  <img src="images/fig-10-throughput-summary.png" alt="Figure 9. Throughput at each cumulative optimization step (intermediate steps shown as estimates from the per-stage sub-benchmarks; only the baseline and the all-combined run on the right are measured end-to-end on 100K). FP16 is the largest single jump; the others are individually smaller but the order matters because the bottleneck shifts as each fix lands." />
+  <figcaption>Figure 9. Throughput at each cumulative optimization step (intermediate steps shown as estimates from the per-stage sub-benchmarks; only the baseline and the all-combined run on the right are measured end-to-end on 100K). FP16 is the largest single jump; the others are individually smaller but the order matters because the bottleneck shifts as each fix lands.</figcaption>
+</figure>
+<p>The extrapolation to one million images deserves an asterisk. We measured 100,000. Linear extrapolation assumes (a) no per-job overhead amortization (true here — model load is ~1 second), (b) constant per-image cost (probably wrong by a few percent because OS page-cache state changes during a 10x larger run), (c) no thermal throttling on the T4 (a real risk during a 17-minute peak-load run). A real million-image job would probably finish in 18-22 minutes, not the clean 17 the extrapolation gives.</p>
+<h2>A bottleneck checklist</h2>
+<p><strong>Table 3. Stage-by-stage bottleneck checklist, with typical shares and fixes.</strong></p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Stage</th>
+<th>Typical share of wall (full-res images)</th>
+<th>When it becomes the bottleneck</th>
+<th>Fix</th>
+<th>Cost of fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>read</td>
+<td>&lt;1%</td>
+<td>network-mounted storage; cold page cache on first epoch</td>
+<td>local SSD; warm cache</td>
+<td>infrastructure change</td>
+</tr>
+<tr>
+<td>decode</td>
+<td>30-50%</td>
+<td>medium-to-large JPEGs (&gt;50 KB); high-resolution PNGs</td>
+<td>libjpeg-turbo or OpenCV</td>
+<td>2 lines of code; install one system package</td>
+</tr>
+<tr>
+<td>resize</td>
+<td>20-40%</td>
+<td>source images much larger than encoder input</td>
+<td>OpenCV <code>cv2.resize</code> instead of <code>PIL.Image.resize</code></td>
+<td>2 lines of code</td>
+</tr>
+<tr>
+<td>normalize</td>
+<td>3-8%</td>
+<td>rarely the bottleneck; only matters per-image at small image sizes</td>
+<td>move into GPU as a torchvision transform</td>
+<td>refactor preprocess pipeline</td>
+</tr>
+<tr>
+<td>batch assemble</td>
+<td>&lt;1%</td>
+<td>rarely matters until you're at batch&gt;256 and many workers</td>
+<td>use <code>torch.stack</code> instead of <code>np.stack</code> + <code>from_numpy</code></td>
+<td>one-line refactor</td>
+</tr>
+<tr>
+<td>H2D copy</td>
+<td>1-3%</td>
+<td>very large batches or large per-image tensors</td>
+<td><code>pin_memory=True</code> + <code>non_blocking=True</code></td>
+<td>already in the recipe</td>
+</tr>
+<tr>
+<td>forward</td>
+<td>8-90% depending on everything above</td>
+<td>once CPU keeps GPU fed</td>
+<td>FP16 (<code>model.half()</code>); larger model = bigger ROI on TensorRT</td>
+<td>1 line for FP16; build pipeline for TRT</td>
+</tr>
+<tr>
+<td>D2H copy</td>
+<td>&lt;1%</td>
+<td>only if you bring per-image attention maps back</td>
+<td>keep only the pooled vector on the host</td>
+<td>architecture choice</td>
+</tr>
+<tr>
+<td>serialize+write</td>
+<td>&lt;1%</td>
+<td>almost never</td>
+<td>parquet is fine; pick npy if you want max speed</td>
+<td>format choice</td>
+</tr>
+</tbody>
+</table></div>
+<p>Source: synthesized from <code>data/t4-serial-stages-original.csv</code>, <code>data/decoder-comparison.csv</code>, <code>data/onnx-vs-pytorch.csv</code>, and <code>data/optimized-end-to-end.csv</code>.</p>
+<p>The checklist is the takeaway. Most "my GPU job is slow" debugging starts at batch size and works inward; this one starts at the JPEG decoder and works outward. On a million-image job the order changes the answer by a factor of five.</p>
+<h2>What the series leaves you with</h2>
+<p>This is the last post. Twenty posts ago we loaded a mesh and the renderer returned a 1024x1024 PNG of pure white. The series spent the next 19 posts on the trip from "the renderer didn't draw anything" to "your scoring job runs 5x slower than necessary because of a JPEG library choice." The arc covered mesh loading and rendering, public 3D datasets, CLIP and DINOv2 embeddings, four families of rotation-invariant descriptors (Zernike, spherical harmonics, voxel hashes, multi-view augmentation), a cheap FAISS search engine (Post 11, $0.31 end-to-end), descriptor bakeoffs, Sammon mapping, threshold calibration, content-hash caching (Post 15 — and this post is the continuation of Post 15's bigger lesson, that the cache changes what's expensive), a public benchmark, synthetic-to-real transfer, conformal prediction, forecasting, and finally this — the bottleneck audit on a real scoring job at scale.</p>
+<figure>
+  <img src="images/fig-09-3d-render-strip.png" alt="Figure 10. Four ModelNet40 renders from the early posts in this series — chair, table, sofa, lamp. The series started by trying to render meshes like these without producing blank PNGs and ended scoring a corpus of real product photos with a 5.88x throughput speedup over the default pipeline." />
+  <figcaption>Figure 10. Four ModelNet40 renders from the early posts in this series — chair, table, sofa, lamp. The series started by trying to render meshes like these without producing blank PNGs and ended scoring a corpus of real product photos with a 5.88x throughput speedup over the default pipeline.</figcaption>
+</figure>
+<p>If you reproduce the experiments in this post, you'll have a profiling harness that works on any image-scoring pipeline. Drop the <code>StageProfiler</code> into your codebase, wrap every step in a <code>with stage(name):</code>, run on 5,000 images, and within five minutes you'll know where your wall clock is going. The fixes are almost always among the eight checklist rows. The libraries are all open-source. The math is the same on a T4, an A100, or a CPU box.</p>
+<p>Three open threads from the arc that I'd find worth a follow-up: (1) the full Novotni 2003 Zernike implementation that Post 07 declined to write, (2) a calibrated conformal prediction layer on top of the DINOv2 retrieval scores from Post 11, and (3) a cross-encoder reranker on the top-K candidates from the FAISS index, which would push retrieval@5 past 0.85 on the ModelNet40 subset. The data, the code, and the throughput budget are in your hands now.</p>
+<h2>Reproducibility</h2>
+<p><strong>Table 4. Reproducibility map — every cited number, the CSV that backs it, and the row.</strong></p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Number cited</th>
+<th>Source file</th>
+<th>Row(s)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>168 img/s, 595 s for 100K, T4 baseline</td>
+<td><code>data/t4-baseline-stages.csv</code></td>
+<td>row 1</td>
+</tr>
+<tr>
+<td>988 img/s, 102 s for 100K, optimized</td>
+<td><code>data/optimized-end-to-end.csv</code></td>
+<td>row 1</td>
+</tr>
+<tr>
+<td>5.88x speedup</td>
+<td>computed from the two rows above</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Per-stage % for PIL serial on full-res images</td>
+<td><code>data/t4-serial-stages-original.csv</code></td>
+<td>row 1</td>
+</tr>
+<tr>
+<td>Decode 51%, resize 38%, forward 8%</td>
+<td>computed from <code>t4-serial-stages-original.csv</code> row 1</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Decoder per-image: PIL 24.8 ms, OpenCV 13.5 ms, turbojpeg 10.2 ms (original)</td>
+<td><code>data/decoder-comparison.csv</code></td>
+<td>rows with <code>image_set=original</code></td>
+</tr>
+<tr>
+<td>Decoder per-image: PIL 0.46 ms, OpenCV 0.25 ms, turbojpeg 0.23 ms (256x256)</td>
+<td><code>data/decoder-comparison.csv</code></td>
+<td>rows with <code>image_set=small_256</code></td>
+</tr>
+<tr>
+<td>Batch sweep throughputs</td>
+<td><code>data/batch-sweep.csv</code></td>
+<td>all rows</td>
+</tr>
+<tr>
+<td>Workers sweep throughputs</td>
+<td><code>data/workers-sweep.csv</code></td>
+<td>all rows</td>
+</tr>
+<tr>
+<td>PyTorch FP32 264 / FP16 1006 / ONNX FP16 432 img/s</td>
+<td><code>data/onnx-vs-pytorch.csv</code></td>
+<td>all rows</td>
+</tr>
+<tr>
+<td>Serialization throughputs</td>
+<td><code>data/serialization-comparison.csv</code></td>
+<td>all rows</td>
+</tr>
+<tr>
+<td>CPU baseline forward share</td>
+<td><code>data/cpu-baseline-stages.csv</code></td>
+<td>row 1 (forward = 99.5% of wall)</td>
+</tr>
+</tbody>
+</table></div>
+<p>Hardware: lightsail-shapenet (16-core Intel x86 + Tesla T4 16 GB), conda env <code>3d-dedup</code>, torch 2.11.0 + CUDA 12.6, transformers 5.6.1, opencv-python-headless 4.13.0, PyTurboJPEG 1.x with libturbojpeg 2.1.2, onnxruntime-gpu 1.23.2.</p>
+<p>Data: 100,000 images sampled from Amazon Berkeley Objects (CC-BY-4.0; <code>s3://amazon-berkeley-objects/images/small/</code> and <code>images/original/</code>, downloaded via <code>aws s3 cp --no-sign-request</code>). 70 shards of the 256 hex prefixes for the small set; 50 shards for the original-resolution set.</p>
+<p>Run commands:</p>
+<pre><code class="language-bash"># Full experiment suite (~25-30 minutes wall clock at 100K)
+python code/main.py --n 100000 --experiment all
+
+# Just the headline run
+python code/main.py --n 100000 --experiment serial,t4,opt
+
+# Smoke test (5K images)
+python code/main.py --quick
+</code></pre>
+<p>The full series — twenty posts of code, data, and experiments — lives in the <code>posts/</code> directory of the same workspace. Start at post 01 if you want the arc; start at this one if you came for the bottleneck checklist.</p>
+
+
+<hr style="margin-top:3em;border:none;border-top:1px solid #ddd;">
+<p style="font-size:15px;color:#666;text-align:center;margin-top:1.2em;">
+  <strong>Part 20 of 20</strong> &middot;
+  <a href="../../index.html">Back to the series index</a>
+</p>
+
+</body>
+</html>

@@ -1,0 +1,16 @@
+%%{init: {'theme': 'neutral'}}%%
+flowchart LR
+    A["ModelNet40 mesh<br/>OFF / OBJ"] --> B["render_open3d<br/>8 views, 224 x 224"]
+    B --> C["DINOv2 ViT-B/14<br/>CLS token, 768-D"]
+    C --> D["mean-pool<br/>over 8 views"]
+    D --> E["L2-normalise<br/>(unit sphere)"]
+    E --> F[("FAISS index<br/>Flat / IVF / HNSW")]
+    Q[["query mesh"]] -.same pipeline.-> F
+    F --> R["top-k<br/>nearest neighbours"]
+
+    classDef frozen fill:#e5e7eb,stroke:#3a4750,color:#111;
+    classDef stateful fill:#3a6b8a,stroke:#1b3a52,color:#fff;
+    classDef io fill:#fff,stroke:#3a4750,color:#111;
+    class C frozen
+    class F stateful
+    class A,Q,R io

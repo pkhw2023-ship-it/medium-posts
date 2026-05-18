@@ -1,0 +1,14 @@
+%%{init: {'theme': 'neutral'}}%%
+flowchart LR
+    A[ModelNet40<br/>800 sources balanced<br/>across 40 classes]
+    B[80 / 10 / 10 split<br/>by source ID]
+    C[Test split<br/>~80 sources]
+    D[5 tiers x 4 clones<br/>per source]
+    E[Hard-neg mining<br/>top-50 same-class<br/>under DINOv2]
+    F[5 baselines<br/>CLIP, DINOv2,<br/>Zernike, voxel, PointNet]
+    G[mAP per tier<br/>+ dataset card<br/>+ split SHA]
+    A --> B --> C --> D
+    C --> E
+    D --> F
+    E --> F
+    F --> G

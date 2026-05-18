@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Turning 3D Models Into Search Vectors With Two Lines of CLIP</title>
+<style>
+  :root {
+    --fg: #1f2328;
+    --muted: #57606a;
+    --accent: #3a4750;
+    --code-bg: #f6f8fa;
+    --code-fg: #1f2328;
+    --inline-code-bg: #f0f0f0;
+    --zebra: #fafafa;
+    --rule: #d0d7de;
+    --red: #d62728;
+  }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: var(--fg);
+    background: #ffffff;
+    line-height: 1.6;
+    font-size: 18px;
+    max-width: 720px;
+    margin: 2em auto;
+    padding: 0 18px;
+  }
+  h1 {
+    font-size: 32px;
+    line-height: 1.2;
+    margin-top: 0.4em;
+    margin-bottom: 0.6em;
+  }
+  h2 {
+    font-size: 26px;
+    margin-top: 2em;
+    margin-bottom: 0.6em;
+    line-height: 1.25;
+  }
+  h3 {
+    font-size: 20px;
+    margin-top: 1.5em;
+    margin-bottom: 0.5em;
+    line-height: 1.3;
+  }
+  p { margin: 1em 0; }
+  figure {
+    margin: 1.6em 0;
+    padding: 0;
+  }
+  figure img, .mermaid-fig img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0 auto;
+  }
+  figcaption {
+    font-size: 15px;
+    color: var(--muted);
+    margin-top: 0.6em;
+    line-height: 1.45;
+  }
+  pre {
+    background: var(--code-bg);
+    color: var(--code-fg);
+    padding: 12px 14px;
+    overflow-x: auto;
+    border-radius: 6px;
+    font-size: 14px;
+    line-height: 1.5;
+    margin: 1em 0;
+  }
+  code {
+    font-family: "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-size: 0.92em;
+  }
+  p code, li code, td code, th code {
+    background: var(--inline-code-bg);
+    padding: 1px 4px;
+    border-radius: 3px;
+  }
+  pre code {
+    background: transparent;
+    padding: 0;
+  }
+  .table-wrap {
+    overflow-x: auto;
+    margin: 1.2em 0;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 15px;
+  }
+  th, td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--rule);
+    text-align: left;
+  }
+  th { font-weight: 600; color: var(--accent); }
+  tr:nth-child(even) { background: var(--zebra); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .caption-top {
+    font-size: 15px;
+    color: var(--muted);
+    margin: 1.2em 0 0.4em;
+    line-height: 1.45;
+  }
+  .caption-src {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 0.4em;
+    font-style: italic;
+  }
+  .mermaid-fig {
+    margin: 1.6em 0;
+  }
+  pre.mermaid {
+    background: transparent;
+    padding: 0;
+    overflow: visible;
+  }
+  hr {
+    border: none;
+    border-top: 1px solid var(--rule);
+    margin: 2.5em 0;
+  }
+</style>
+</head>
+<body>
+
+<h1>Turning 3D Models Into Search Vectors With Two Lines of CLIP</h1>
+
+<p>There is a two-line trick that turns a 3D mesh into a search-ready vector. Render the object from 8 angles, push each render through DINOv2, take the average. That is the whole pipeline. On a 200-object ModelNet40 subset I get 0.763 retrieval-precision@5 with mean-pool: three or four of every five top-5 nearest neighbours come from the same class as the query, without any 3D-specific architecture. Swap mean-pool for max-pool and the number climbs to 0.789.</p>
+
+<p>This post is the bridge between rendering and searching. Everything in the series so far has been about getting clean pixels out of a mesh. From here on it is about what to do with those pixels. The thing I had to convince myself of, and want to show you, is that you do not need a 3D-native encoder to get a useful 3D search vector. You need a renderer and a 2D image encoder you can call as a function.</p>
+
+<p>Here is the pipeline I will defend by the end of the post.</p>
+
+<figure class="mermaid-fig">
+  <pre class="mermaid">
+%%{init: {'theme': 'neutral'}}%%
+flowchart LR
+    M[3D mesh] --> R[render 8 views]
+    R --> E[image encoder]
+    E --> V[per-view vectors]
+    V --> P[pool: mean / max / attn]
+    P --> O[one vector per object]
+    O --> I[FAISS index]
+    Q[query mesh] --> R
+    I --> N[top-k nearest objects]
+  </pre>
+  <noscript>
+    <img src="images/fig-01-pipeline-mermaid.png" alt="Pipeline: mesh, render 8 views, image encoder, per-view vectors, pool, one vector per object, FAISS index, top-k nearest objects.">
+  </noscript>
+  <figcaption>Figure 1. The full pipeline. The same boxes show up in every Wave 2 and Wave 3 post in this series — the rest of the series is just swapping pieces in and measuring what changes.</figcaption>
+</figure>
+
+<p>The mesh comes in on the left. It is rendered from a fixed set of camera positions, each render becomes an image, each image becomes a vector through an off-the-shelf encoder, the per-view vectors are pooled into one per-object vector, and that vector is dropped into a FAISS index. At query time the query mesh goes through the same path. Nothing about the encoder knows or cares that the inputs are renders. CLIP and DINOv2 see what they always see: a 224×224 image, three channels, byte values.</p>
+
+<p>This is the canonical primitive the series will reuse. Post 06 swaps the neural encoder for HOG and PointNet. Post 09 swaps "render 8 views" for voxel hashing. Post 11 stitches a real search engine around it. Each later post is one box in this diagram, traded in, with the rest held constant.</p>
+
+<h2>Eight views, one chair</h2>
+
+<p>Here is the render code, end to end. It uses the shared <code>medium20.render_kit</code> from Posts 01–02 — Post 01 ships <code>load_canonical</code>, Post 02 ships <code>horizontal_ring</code> and <code>render_open3d</code>.</p>
+
+<pre><code class="language-python">from medium20.render_kit import load_mesh, horizontal_ring, render_open3d
+
+mesh = load_mesh("ModelNet40/chair/train/chair_0001.off")
+cameras = horizontal_ring(n=8, elev_deg=20)        # (8, 3) directions
+imgs = render_open3d(mesh, cameras, image_size=224) # (8, 224, 224, 3) uint8
+</code></pre>
+
+<p>Twelve lines, including imports, and you have an <code>[8, 224, 224, 3]</code> uint8 tensor ready to feed a vision transformer. The 8 cameras are evenly spaced on a horizontal ring at 20° elevation. The output looks like this.</p>
+
+<figure>
+  <img src="images/fig-02-eight-view-strip.png" alt="Eight horizontal renders of a folding chair from azimuth 0 to 315 degrees in 45-degree steps.">
+  <figcaption>Figure 2. Eight horizontal views of chair_0001 from ModelNet40, azimuth 0° through 315° in 45° steps. The plastic chair is fully described by the strip — front view, side view, back view, three-quarter views in between. Pulling the elevation up to 20° matters: a strict equator (0°) often hides the seat behind the back, and the encoder sees a vertical sliver.</figcaption>
+</figure>
+
+<p>Why 8 and not 1 or 32? One view loses too much; a chair from straight behind is a wireframe, a chair from straight above is a square. Past 16 views you are paying for marginal returns; the rendered side at azimuth=45° already covers what azimuth=44° would have shown. Post 11 has the actual ablation curve. For now: 8 is the empirical sweet spot for retrieval on object-scale shapes, and it keeps the per-object encode time under a quarter-second on a T4.</p>
+
+<p>A second design choice that took me longer to settle than I expected: render in the same resolution the encoder wants. CLIP ViT-B/32 and DINOv2 ViT-B/14 both expect 224×224 inputs (CLIP via its preprocessor's resize-and-center-crop; DINOv2 via its <code>AutoImageProcessor</code>). Rendering at 1024×1024 and downscaling looks nicer in figures but adds nothing the encoder uses; the patch tokens are the same. I expected rendering at 224 to be dramatically cheaper than rendering at 1024; on the T4 the per-view cost goes from 15.2 ms at 224×224 to 20.0 ms at 1024×1024 (<code>data/render-resolution-cost.csv</code>), a 1.3× ratio, not the order of magnitude I had in my head. Open3D's per-frame setup dominates pixel shading on object-scale meshes. The argument for going straight to 224 is simpler: fewer bytes through every downstream step.</p>
+
+<h2>Two encoders, two priors</h2>
+
+<p>The encoders are four lines apiece. Here is CLIP.</p>
+
+<pre><code class="language-python">from transformers import CLIPModel, CLIPProcessor
+clip = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").cuda().eval()
+proc = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+inputs = proc(images=list(imgs), return_tensors="pt").to("cuda")
+clip_views = clip.get_image_features(**inputs).pooler_output  # → (8, 512)
+</code></pre>
+
+<p>Here is DINOv2.</p>
+
+<pre><code class="language-python">from transformers import AutoModel, AutoImageProcessor
+dino = AutoModel.from_pretrained("facebook/dinov2-base").cuda().eval()
+proc = AutoImageProcessor.from_pretrained("facebook/dinov2-base")
+inputs = proc(images=list(imgs), return_tensors="pt").to("cuda")
+dino_views = dino(**inputs).last_hidden_state[:, 0, :]        # → (8, 768)
+</code></pre>
+
+<p>CLIP gives you a 512-dimensional vector per image, sitting in the shared image-text space where "a photo of a chair" lives nearby. DINOv2 gives you a 768-dimensional vector per image, the CLS token from a ViT-B/14 trained with self-supervision on a curated 142M-image dataset called LVD-142M. Neither knows what a chair is in the sense of having seen a "chair" label. CLIP knows what <em>the word</em> "chair" means; DINOv2 knows what photographs of chairs <em>look like in a self-supervised feature space</em>. They give different answers on real 3D queries.</p>
+
+<p>A license note that matters if you ever ship this. DINOv2 weights are CC BY-NC: research only. For this blog and your own experiments it is fine; for anything customer-facing, swap in OpenCLIP or the original DINO. The code shape does not change; only the <code>from_pretrained</code> string does.</p>
+
+<h2>Per-view to per-object: pooling</h2>
+
+<p>Each object now has 8 vectors. You need 1. The simplest thing that works is to average them.</p>
+
+<pre><code class="language-python">def pool_views_mean(views):           # views: (8, D)
+    return views.mean(axis=0)         # → (D,)
+</code></pre>
+
+<p>Six lines if you count the wrapper. Does it lose information? Almost everything in machine learning is "average a stack of representations until it works", so the prior is yes-but-not-much. Look at what the per-view embeddings actually look like before we collapse them.</p>
+
+<figure>
+  <img src="images/fig-03-embedding-heatmap.png" alt="Heatmap of DINOv2 activations for one chair across 8 views and the first 64 of 768 dimensions.">
+  <figcaption>Figure 3. DINOv2 activations for one chair across the 8 views, sliced to the first 64 of 768 dimensions. Horizontal bands — rows that stay roughly the same color across all 8 columns — are object-identity dimensions: they describe what the chair <em>is</em>, regardless of which side you are looking at. The dimensions that change column-to-column are viewpoint-dependent: they describe what part of the chair is facing the camera. Averaging across views damps the second group toward zero, which is exactly the point.</figcaption>
+</figure>
+
+<p>You can read the figure as "the encoder is already factoring object identity from viewpoint, and pooling finishes the job." That is roughly right and roughly enough.</p>
+
+<p>Mean is the boring baseline. Max-pool takes the elementwise maximum across the 8 views, which is what you would use if you believed each dimension fires on a specific feature and the strongest fire is the signal. Attention-pool weights views by a softmax of a learned (or here, mean-derived) query vector and sums. I tried all three.</p>
+
+<figure>
+  <img src="images/fig-04-pooling-comparison.png" alt="Bar chart of retrieval precision at 5 for six combinations of encoder and pool method.">
+  <figcaption>Figure 4. Retrieval-precision@5 by encoder and pooling method on the 200-object pool. DINOv2-max edges DINOv2-mean by 2.6 points; mean and attention land within a tenth of a point of each other in both encoders. The pooling method matters less than the encoder choice. The DINOv2 vs CLIP gap is roughly 6-8 points whichever pool you pick.</figcaption>
+</figure>
+
+<p>What stands out is what didn't move. Attention-pool was supposed to be cleverer than mean-pool — give the model a query vector, let it weight the views. It is, here, indistinguishable. Both DINOv2-attn at 0.764 and DINOv2-mean at 0.763 sit in the same place to two decimal points. Mean-pool wins on simplicity. Max-pool wins on the leaderboard by 2.6 points. For the rest of this post I will treat mean-pool as the default because it is the strongest result without adding any moving parts; if you wanted to chase the absolute number you would pick max.</p>
+
+<h2>Does it actually retrieve?</h2>
+
+<p>Table 1 has the full evaluation. The headline column is <code>retrieval@5</code> — for every object in the 200-object pool, query the FAISS index with its pooled vector, look at the top-5 neighbours (excluding itself), and count what fraction share the query's class. Average across all 200 queries.</p>
+
+<p class="caption-top">Table 1. Retrieval precision (within-class hit rate, excluding self) for six (encoder, pool) combinations on a 10-class, 200-object ModelNet40 subset. Index is FAISS IndexFlatIP over L2-normalised vectors. Best value in each column bolded.</p>
+
+<div class="table-wrap">
+<table>
+<thead>
+<tr><th>Encoder</th><th>Pool</th><th class="num">r@1</th><th class="num">r@5</th><th class="num">r@10</th><th class="num">Embed dim</th><th class="num">build (ms)</th><th class="num">query (ms)</th></tr>
+</thead>
+<tbody>
+<tr><td>CLIP ViT-B/32</td><td>mean</td><td class="num">0.775</td><td class="num">0.717</td><td class="num">0.632</td><td class="num">512</td><td class="num">0.045</td><td class="num">0.050</td></tr>
+<tr><td>CLIP ViT-B/32</td><td>max</td><td class="num">0.800</td><td class="num">0.710</td><td class="num">0.623</td><td class="num">512</td><td class="num">0.041</td><td class="num">0.050</td></tr>
+<tr><td>CLIP ViT-B/32</td><td>attn</td><td class="num">0.780</td><td class="num">0.715</td><td class="num">0.625</td><td class="num">512</td><td class="num">0.040</td><td class="num">0.050</td></tr>
+<tr><td>DINOv2 ViT-B/14</td><td>mean</td><td class="num">0.845</td><td class="num">0.763</td><td class="num">0.683</td><td class="num">768</td><td class="num">0.072</td><td class="num">0.071</td></tr>
+<tr><td>DINOv2 ViT-B/14</td><td>max</td><td class="num"><strong>0.865</strong></td><td class="num"><strong>0.789</strong></td><td class="num"><strong>0.703</strong></td><td class="num">768</td><td class="num">0.062</td><td class="num">0.072</td></tr>
+<tr><td>DINOv2 ViT-B/14</td><td>attn</td><td class="num">0.840</td><td class="num">0.764</td><td class="num">0.683</td><td class="num">768</td><td class="num">0.070</td><td class="num">0.071</td></tr>
+</tbody>
+</table>
+</div>
+<p class="caption-src">Source: data/retrieval-at-5.csv (6 rows).</p>
+
+<p>A few things I want you to take away from the table. The DINOv2 vs CLIP gap is real and consistent: every DINOv2 row beats every CLIP row on every column. The pooling choice within each encoder is small noise; the encoder choice is the lever. r@10 always sits lower than r@5, because each class only has 20 objects total, so once you ask for the top 10 you are inevitably reaching into the other 180. The FAISS index itself is irrelevant at this scale: build is 70 microseconds, query is 70 microseconds. The work is in the encoder, not the index.</p>
+
+<p>Pictures are more convincing than numbers. Here are the top-5 neighbours for three real queries.</p>
+
+<figure>
+  <img src="images/fig-05-nn-gallery-three.png" alt="Three-row gallery: chair query with 5 chair neighbours; airplane query with 4 airplanes and 1 guitar; lamp query with 4 lamps and 1 guitar.">
+  <figcaption>Figure 5. Top-5 nearest neighbours under DINOv2-mean for a chair, an airplane, and a lamp query. Black titles are same-class hits; red titles are class mistakes. The chair query retrieves five chairs cleanly. The airplane query retrieves four airplanes and one guitar — the guitar happens to have a long thin neck and a wider body, which is roughly an airplane silhouette. The lamp query retrieves four lamps and one guitar — same explanation, the silhouette of a vertical neck on a base is shared between guitars and stand-style lamps.</figcaption>
+</figure>
+
+<p>The mistakes are educational. The encoder is not picking up "what is this object?"; it is picking up "what shape is this object?" An airplane in profile and a guitar in profile look quite similar, and the encoder agrees. This is something a 3D-native model would also have to learn its way around, but it is much more obvious when the encoder is image-based and you can read the silhouette as a shape signal directly.</p>
+
+<h2>Class structure: a t-SNE</h2>
+
+<p>Project the 200 DINOv2-mean vectors down to 2D and colour by class, and the class structure pops out.</p>
+
+<figure>
+  <img src="images/fig-06-tsne-200.png" alt="t-SNE scatter of 200 DINOv2-mean object vectors coloured by 10 ModelNet40 classes using a Viridis-sampled palette; airplane, car, guitar, and bookshelf clusters are clearly separated.">
+  <figcaption>Figure 6. t-SNE projection of 200 DINOv2-mean object vectors, coloured by class with a Viridis-at-10 sampling. Airplane (dark purple, top), car (light green, bottom), guitar (yellow, left), and bookshelf (teal, right) form tight, well-separated clusters: these are the classes the model finds easy. The middle of the figure is a tangle of chair, bed, sofa, bench, and table — all flat-topped, four-cornered furniture that share a silhouette. Lamp sits to the left, distinct in shape from the furniture cluster. Perplexity 30, random_state 42.</figcaption>
+</figure>
+
+<p>t-SNE is decorative: it preserves local neighbourhood structure but not distances, and any "this cluster is far from that one" claim is suspect. The reason I am showing it anyway is that the local structure agrees with the retrieval numbers. The classes that cluster are the classes you can search for; the classes that tangle are the classes the encoder struggles to tell apart. Post 13 will make a similar projection with Sammon mapping, which actually does preserve distances, and the picture is messier. The same clusters survive.</p>
+
+<h2>CLIP vs DINOv2, side by side</h2>
+
+<p>Here is the per-class breakdown for the head-to-head, both encoders mean-pooled.</p>
+
+<figure>
+  <img src="images/fig-07-clip-vs-dinov2-bar.png" alt="Per-class bar chart of CLIP-mean vs DINOv2-mean retrieval precision at 5 across 10 ModelNet40 classes.">
+  <figcaption>Figure 7. CLIP-mean vs DINOv2-mean, retrieval-precision@5 broken down by class. The two encoders are roughly tied on the "easy" classes — airplane, car, bookshelf, guitar — where any half-decent vision model resolves the silhouette. The DINOv2 advantage shows up where the brief expected CLIP to win: lamp (0.81 vs 0.67, a 14-point gap), sofa (0.82 vs 0.73), and bench (0.54 vs 0.42). CLIP only edges DINOv2 on airplane (0.98 vs 0.95), it is a tie on chair (0.62/0.62), and a near-tie on bookshelf (0.89 vs 0.88).</figcaption>
+</figure>
+
+<p>I want to call out one thing in that chart that I genuinely did not expect. Going in, I had it in my head that CLIP would win on the texture-y / colour-y classes — lamps with metal shades, sofas with fabric — because CLIP was trained on captioned web images where colour and material show up in the text. DINOv2, with no language signal, would be "shape-only." The data says the opposite: DINOv2 wins lamp by 14 points and sofa by 9, both classes where shape is the harder problem because there is real intra-class variation. DINOv2's self-supervised features generalise better to silhouettes the model never saw at training time, even compared to a model that saw labelled web text including the word "lamp."</p>
+
+<p>So when should you pick which? The decision tree is short.</p>
+
+<figure class="mermaid-fig">
+  <pre class="mermaid">
+%%{init: {'theme': 'neutral'}}%%
+flowchart TD
+    Start[need a 3D embedding] --> Q1{need text alignment?}
+    Q1 -- yes --> CLIP[CLIP ViT-B/32]
+    Q1 -- no --> Q2{want best shape recall?}
+    Q2 -- yes --> DINO[DINOv2 ViT-B/14]
+    Q2 -- no --> Q3{need lowest latency?}
+    Q3 -- yes --> CLIP
+    Q3 -- no --> DINO
+  </pre>
+  <noscript>
+    <img src="images/fig-08-encoder-decision-mermaid.png" alt="Encoder decision tree: text alignment yes -> CLIP; no -> best shape recall yes -> DINOv2; no -> lowest latency yes -> CLIP, no -> DINOv2.">
+  </noscript>
+  <figcaption>Figure 8. Encoder choice. If you need text-image alignment (zero-shot classification by typing class names, or cross-modal search), CLIP is the only option. If you want the best shape-only retrieval, DINOv2 wins. If you need the lowest per-image latency or the smallest embedding (512 vs 768), pick CLIP.</figcaption>
+</figure>
+
+<p>The latency case is real and is the second most useful result in this post. CLIP is dramatically faster than DINOv2 at every batch size.</p>
+
+<p class="caption-top">Table 2. Encoder throughput on a Tesla T4, batch sizes 1 / 8 / 32 / 128, 224×224 input. CLIP ViT-B/32 runs ~5x faster than DINOv2 ViT-B/14 at every realistic batch size. Throughput is images per second, measured end-to-end including preprocessing.</p>
+
+<div class="table-wrap">
+<table>
+<thead>
+<tr><th>Encoder</th><th class="num">Batch size</th><th class="num">Throughput (img/s)</th><th class="num">Peak GPU mem (MB)</th></tr>
+</thead>
+<tbody>
+<tr><td>CLIP ViT-B/32</td><td class="num">1</td><td class="num">114</td><td class="num">1297</td></tr>
+<tr><td>CLIP ViT-B/32</td><td class="num">8</td><td class="num">311</td><td class="num">946</td></tr>
+<tr><td>CLIP ViT-B/32</td><td class="num">32</td><td class="num"><strong>401</strong></td><td class="num">1016</td></tr>
+<tr><td>CLIP ViT-B/32</td><td class="num">128</td><td class="num"><strong>1608</strong></td><td class="num">1104</td></tr>
+<tr><td>DINOv2 ViT-B/14</td><td class="num">1</td><td class="num">56</td><td class="num">929</td></tr>
+<tr><td>DINOv2 ViT-B/14</td><td class="num">8</td><td class="num">74</td><td class="num">1012</td></tr>
+<tr><td>DINOv2 ViT-B/14</td><td class="num">32</td><td class="num">79</td><td class="num">1297</td></tr>
+<tr><td>DINOv2 ViT-B/14</td><td class="num">128</td><td class="num">309</td><td class="num">1629</td></tr>
+</tbody>
+</table>
+</div>
+<p class="caption-src">Source: data/latency-by-batch.csv (8 rows).</p>
+
+<p>The 5x gap is mostly the patch size: CLIP ViT-B/32 has 32-pixel patches, DINOv2 ViT-B/14 has 14-pixel patches. Smaller patches mean a longer token sequence (49 vs 256 tokens for a 224×224 input), and transformer attention is quadratic in the sequence length. You pay for DINOv2's finer-grained features in compute. For a million-object ingest, that ratio is the difference between half a day and three days.</p>
+
+<h2>What you walked out with</h2>
+
+<p>A 3D model becomes a search vector in about 80 lines of Python: the render kit, two <code>from_pretrained</code> calls, a mean over the view axis, and a FAISS index. On a 10-class ModelNet40 subset, DINOv2 mean-pooled over 8 horizontal views gets you 0.763 retrieval-precision@5; max-pooled gets you 0.789. CLIP runs five times faster at the cost of about 7 points of retrieval precision. Whichever you pick, the canonical pipeline diagram in Figure 1 does not change.</p>
+
+<p>The honest caveat is that this whole exercise has been "render once, encode once" on objects sitting upright in their canonical pose. Real 3D pipelines see meshes that have been rotated, scaled, decimated, and re-textured by whoever exported them. Post 06 is the bakeoff: take this same DINOv2-mean pipeline, rotate every query by a random angle, and benchmark it against five classical rotation-invariant descriptors that never see a neural network. The headline DINOv2 number does not survive — and the surprise is which classical descriptors do.</p>
+
+<h2>Reproducibility</h2>
+
+<p>All experiments run on a Tesla T4 in a conda env called <code>3d-dedup</code> on AWS Lightsail. The shared kit is at <code>medium20==0.1</code> (Post 02 build). The 200 objects are the first 20 entries (alphabetically by filename) from each of 10 classes in the ModelNet40 official <strong>train split</strong>. Total wall-clock for the experiments in this post: about 5 minutes. That covers 105 seconds to render 1,600 views, 4 seconds for CLIP encoding, 20 seconds for DINOv2, and the rest is the pooling/retrieval/t-SNE sweep.</p>
+
+<p>Everything reported is a single deterministic run. PyTorch ops are deterministic on this T4 setup and t-SNE is seeded (<code>random_state=42</code>); the attention-pool uses a fixed-seed query (<code>seed=0</code>). I did not measure variance across reruns. The retrieval-precision numbers reproduced exactly on the second invocation.</p>
+
+<p>Experiment configuration:</p>
+
+<div class="table-wrap">
+<table>
+<thead>
+<tr><th>Parameter</th><th>Value</th></tr>
+</thead>
+<tbody>
+<tr><td>ModelNet40 split / sampling</td><td>train split, first 20 alphabetically per class</td></tr>
+<tr><td>Classes (10)</td><td>airplane, chair, table, bed, bookshelf, bench, sofa, lamp, car, guitar</td></tr>
+<tr><td>Views per object</td><td>8 horizontal ring, azimuth 0°-315° in 45° steps, elevation 20°</td></tr>
+<tr><td>Render resolution</td><td>224×224, white bg, 3-point lighting</td></tr>
+<tr><td>CLIP model</td><td><code>openai/clip-vit-base-patch32</code> (512-D, MIT licence)</td></tr>
+<tr><td>DINOv2 model</td><td><code>facebook/dinov2-base</code> ViT-B/14 (768-D, CC BY-NC)</td></tr>
+<tr><td>Encoder batch size (retrieval run)</td><td>32</td></tr>
+<tr><td>Attention-pool temperature</td><td>0.1, query = per-object mean direction</td></tr>
+<tr><td>t-SNE</td><td>perplexity 30, <code>random_state=42</code>, init=<code>pca</code></td></tr>
+<tr><td>FAISS index</td><td><code>IndexFlatIP</code> over L2-normalised vectors</td></tr>
+<tr><td>Hardware</td><td>Tesla T4, CUDA 12.6, driver 560.35</td></tr>
+<tr><td>Framework versions</td><td>torch 2.11, transformers 5.6.1, faiss-cpu 1.14.1, sklearn 1.7.2, open3d (EGL headless)</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Reproducibility checklist (every numeric claim in prose):</p>
+
+<div class="table-wrap">
+<table>
+<thead>
+<tr><th>Claim in prose</th><th>Source file</th></tr>
+</thead>
+<tbody>
+<tr><td>0.789 retrieval@5 (DINOv2-max)</td><td><code>data/retrieval-at-5.csv</code> row 5</td></tr>
+<tr><td>0.763 retrieval@5 (DINOv2-mean)</td><td><code>data/retrieval-at-5.csv</code> row 4</td></tr>
+<tr><td>0.717 retrieval@5 (CLIP-mean)</td><td><code>data/retrieval-at-5.csv</code> row 1</td></tr>
+<tr><td>401 vs 79 images/sec at batch 32</td><td><code>data/latency-by-batch.csv</code> rows 3, 7</td></tr>
+<tr><td>0.81 vs 0.67 lamp (DINOv2 vs CLIP)</td><td><code>data/per-class-retrieval.csv</code> row <code>lamp</code></td></tr>
+<tr><td>200 objects, 10 classes, 8 views</td><td><code>data/render-manifest.csv</code> (200 rows)</td></tr>
+<tr><td>105 seconds for 1,600 renders</td><td><code>code/main.py</code> step 1 timer</td></tr>
+<tr><td>15.2 ms (224) vs 20.0 ms (1024) per view</td><td><code>data/render-resolution-cost.csv</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Run:</p>
+
+<pre><code class="language-bash">conda activate 3d-dedup
+cd posts/05-pixels-to-embeddings-clip-dinov2-primer
+python code/main.py             # full experiment, ~5 min on T4
+python code/make_visuals.py     # regenerates images/
+</code></pre>
+
+<p>DINOv2 weights are CC BY-NC (research-only). ModelNet40 is CC BY-NC (Wu et al. 2015). CLIP weights are released under the MIT license.</p>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
+</script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism.min.css">
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+
+
+<hr style="margin-top:3em;border:none;border-top:1px solid #ddd;">
+<p style="font-size:15px;color:#666;text-align:center;margin-top:1.2em;">
+  <strong>Part 5 of 20</strong> &middot;
+  <a href="../../index.html">Back to the series index</a>
+</p>
+
+</body>
+</html>

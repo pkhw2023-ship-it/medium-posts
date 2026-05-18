@@ -1,0 +1,9 @@
+%%{init: {'theme': 'neutral'}}%%
+flowchart LR
+    Mesh[input mesh] --> Norm[centroid + unit ball]
+    Norm --> Vox[voxelize N^3]
+    Vox --> Shell[bin by radial shell]
+    Shell --> SH[project each shell onto Y_l^m]
+    SH --> Coeff["c_(n,l,m) coefficients"]
+    Coeff --> Inv["per (n,l) magnitudes F_(n,l)"]
+    Inv --> Vec[66-D rotation-invariant vector]

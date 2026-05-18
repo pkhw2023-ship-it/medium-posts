@@ -1,0 +1,9 @@
+%%{init: {'theme': 'neutral'}}%%
+flowchart TD
+    A[voxel occupancy on unit ball] --> B{which radial basis?}
+    B -->|Novotni 2003| C[radial polynomial R_n_l_r]
+    B -->|ZernikeApprox shipped| D[binned shells r in n_n+1]
+    C --> E[3D Zernike polynomials Z_n_l_m_r_theta_phi]
+    D --> F[per-shell SH coefficients c_n_l_m]
+    E --> G[same identity sqrt sum_m c squared]
+    F --> G
